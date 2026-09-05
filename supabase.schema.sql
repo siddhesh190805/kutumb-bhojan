@@ -173,6 +173,26 @@ begin
 
   if h is not null then return h; end if;
 
+  if coalesce((auth.jwt()->>'is_anonymous')::boolean, false) then
+    select id into h
+    from public.households
+    where name = 'कुटुंब भोजन'
+    order by created_at
+    limit 1;
+
+    if h is null then
+      insert into public.households(name)
+      values ('कुटुंब भोजन')
+      returning id into h;
+    end if;
+
+    insert into public.household_members(household_id,user_id,role)
+    values (h,uid,'member')
+    on conflict (household_id,user_id) do nothing;
+
+    return h;
+  end if;
+
   insert into public.households(name)
   values (coalesce(nullif(trim(household_name), ''), 'कुटुंब भोजन'))
   returning id into h;
