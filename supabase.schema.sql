@@ -134,22 +134,22 @@ drop policy if exists households_member_select on public.households;
 create policy households_member_select on public.households for select to authenticated using (public.is_household_member(id));
 
 drop policy if exists household_members_self_select on public.household_members;
-create policy household_members_self_select on public.household_members for select to authenticated using (user_id = auth.uid() or public.is_household_member(household_id));
+create policy household_members_self_select on public.household_members for select to authenticated using ((select auth.uid()) = user_id or (select public.is_household_member(household_id)));
 
 drop policy if exists family_members_member_all on public.family_members;
-create policy family_members_member_all on public.family_members for all to authenticated using (public.is_household_member(household_id)) with check (public.is_household_member(household_id));
+create policy family_members_member_all on public.family_members for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
 
 drop policy if exists recipes_member_all on public.recipes;
-create policy recipes_member_all on public.recipes for all to authenticated using (public.is_household_member(household_id)) with check (public.is_household_member(household_id));
+create policy recipes_member_all on public.recipes for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
 
 drop policy if exists meal_entries_member_all on public.meal_entries;
-create policy meal_entries_member_all on public.meal_entries for all to authenticated using (public.is_household_member(household_id)) with check (public.is_household_member(household_id));
+create policy meal_entries_member_all on public.meal_entries for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
 
 drop policy if exists shopping_items_member_all on public.shopping_items;
-create policy shopping_items_member_all on public.shopping_items for all to authenticated using (public.is_household_member(household_id)) with check (public.is_household_member(household_id));
+create policy shopping_items_member_all on public.shopping_items for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
 
 drop policy if exists prep_tasks_member_all on public.prep_tasks;
-create policy prep_tasks_member_all on public.prep_tasks for all to authenticated using (public.is_household_member(household_id)) with check (public.is_household_member(household_id));
+create policy prep_tasks_member_all on public.prep_tasks for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
 
 create or replace function public.bootstrap_household(household_name text default 'कुटुंब भोजन')
 returns uuid
@@ -209,3 +209,45 @@ revoke all on function public.is_household_member(uuid) from public;
 grant execute on function public.is_household_member(uuid) to authenticated;
 revoke all on function public.bootstrap_household(text) from anon;
 revoke all on function public.is_household_member(uuid) from anon;
+
+-- Content and household configuration layer
+create table if not exists public.health_tips (
+  id uuid primary key default gen_random_uuid(), tip_key text not null unique,
+  category text not null, title text not null, marathi_title text not null,
+  summary text not null, marathi_summary text not null, detail text not null,
+  marathi_detail text not null, action text not null, marathi_action text not null,
+  source_label text, source_url text, priority integer not null default 0,
+  sort_order integer not null default 0, active boolean not null default true,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create table if not exists public.health_targets (
+  id uuid primary key default gen_random_uuid(), target_key text not null unique,
+  category text not null, label text not null, marathi_label text not null,
+  value numeric(10,2), value_text text, unit text, period_text text,
+  context text not null, marathi_context text not null, source_label text,
+  source_url text, sort_order integer not null default 0, active boolean not null default true,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create table if not exists public.household_settings (
+  household_id uuid primary key references public.households(id) on delete cascade,
+  display_name text not null default 'कुटुंब भोजन',
+  household_size integer not null default 4 check (household_size between 1 and 20),
+  oil_stock_ml integer not null default 5000 check (oil_stock_ml >= 0),
+  oil_monthly_target_ml integer not null default 3000 check (oil_monthly_target_ml > 0),
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.health_tips enable row level security;
+alter table public.health_targets enable row level security;
+alter table public.household_settings enable row level security;
+drop policy if exists health_tips_authenticated_select on public.health_tips;
+create policy health_tips_authenticated_select on public.health_tips for select to authenticated using (true);
+drop policy if exists health_targets_authenticated_select on public.health_targets;
+create policy health_targets_authenticated_select on public.health_targets for select to authenticated using (true);
+drop policy if exists household_settings_member_all on public.household_settings;
+create policy household_settings_member_all on public.household_settings for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+grant select on public.health_tips to authenticated;
+grant select on public.health_targets to authenticated;
+grant select, insert, update, delete on public.household_settings to authenticated;
+revoke all on public.health_tips from anon;
+revoke all on public.health_targets from anon;
+revoke all on public.household_settings from anon;

@@ -41,6 +41,16 @@ test('remote table configuration covers each shared household domain exactly onc
 
 test('settings copy describes cloud-backed storage',()=>{
   const source=require('fs').readFileSync(require('path').join(__dirname,'..','app.js'),'utf8');
-  assert.match(source,/Cloud sync सक्रिय आहे/);
+  assert.match(source,/shared household data Supabase मध्ये sync होतो/);
   assert.doesNotMatch(source,/App static आहे, त्यामुळे server database लागत नाही/);
+});
+
+test('health content and household settings mappings are normalized for the UI',()=>{
+  const {mapHealthTips,mapHealthTargets,mapHouseholdSettings}=require('../sync.js');
+  const tips=mapHealthTips([{tip_key:'oil',category:'Oil',title:'Measure',marathi_title:'मोजा',summary:'s',marathi_summary:'स',detail:'d',marathi_detail:'द',action:'a',marathi_action:'क',priority:5,sort_order:1,active:true}]);
+  const targets=mapHealthTargets([{target_key:'salt',category:'Salt',label:'Salt',marathi_label:'मीठ',value:5,value_text:'< 5',unit:'g/day',period_text:'day',context:'ctx',marathi_context:'संदर्भ',active:true,sort_order:1}]);
+  const settings=mapHouseholdSettings({household_id:'h1',display_name:'कुटुंब भोजन',household_size:4,oil_stock_ml:5000,oil_monthly_target_ml:3000});
+  assert.equal(tips[0].mrTitle,'मोजा');
+  assert.equal(targets[0].value,5);
+  assert.equal(settings.oilStockMl,5000);
 });

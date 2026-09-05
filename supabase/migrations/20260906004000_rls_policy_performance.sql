@@ -1,0 +1,14 @@
+drop policy if exists household_members_self_select on public.household_members;
+create policy household_members_self_select on public.household_members for select to authenticated using ((select auth.uid()) = user_id or (select public.is_household_member(household_id)));
+drop policy if exists family_members_member_all on public.family_members;
+create policy family_members_member_all on public.family_members for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+drop policy if exists recipes_member_all on public.recipes;
+create policy recipes_member_all on public.recipes for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+drop policy if exists meal_entries_member_all on public.meal_entries;
+create policy meal_entries_member_all on public.meal_entries for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+drop policy if exists shopping_items_member_all on public.shopping_items;
+create policy shopping_items_member_all on public.shopping_items for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+drop policy if exists prep_tasks_member_all on public.prep_tasks;
+create policy prep_tasks_member_all on public.prep_tasks for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+drop policy if exists household_settings_member_all on public.household_settings;
+create policy household_settings_member_all on public.household_settings for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));

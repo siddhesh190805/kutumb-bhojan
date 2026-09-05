@@ -23,7 +23,7 @@ test('family entry flow uses anonymous auth and has no email OTP or sign-out UI'
   assert.doesNotMatch(source,/signInWithOtp/);
   assert.doesNotMatch(source,/function renderAuth/);
   assert.doesNotMatch(source,/data-signout/);
-  assert.match(source,/login\/OTP लागत नाही/);
+  assert.match(source,/Login\/OTP लागत नाही/);
 });
 
 test('Supabase bootstrap shares the designated family household for anonymous sessions',()=>{
@@ -32,4 +32,33 @@ test('Supabase bootstrap shares the designated family household for anonymous se
   assert.match(schema,/auth\.jwt\(\)->>'is_anonymous'/);
   assert.match(schema,/where name = 'कुटुंब भोजन'/);
   assert.match(schema,/on conflict \(household_id,user_id\) do nothing/);
+});
+
+test('health guide and dynamic household settings are implemented without hard-coded health-card content',()=>{
+  const fs=require('node:fs');
+  const root=require('node:path').join(__dirname,'..');
+  const source=fs.readFileSync(require('node:path').join(root,'app.js'),'utf8');
+  const schema=fs.readFileSync(require('node:path').join(root,'supabase.schema.sql'),'utf8');
+  assert.match(source,/healthView\(\)/);
+  assert.match(source,/from\('health_tips'\)/);
+  assert.match(source,/from\('health_targets'\)/);
+  assert.match(source,/from\('household_settings'\)/);
+  assert.match(source,/oilMonthlyTargetMl/);
+  assert.match(schema,/create table if not exists public\.health_tips/);
+  assert.match(schema,/create table if not exists public\.health_targets/);
+  assert.match(schema,/create table if not exists public\.household_settings/);
+});
+
+test('theme and PWA shell are wired',()=>{
+  const fs=require('node:fs');
+  const root=require('node:path').join(__dirname,'..');
+  const app=fs.readFileSync(require('node:path').join(root,'app.js'),'utf8');
+  const index=fs.readFileSync(require('node:path').join(root,'index.html'),'utf8');
+  const sw=fs.readFileSync(require('node:path').join(root,'public','service-worker.js'),'utf8');
+  const manifest=fs.readFileSync(require('node:path').join(root,'public','manifest.webmanifest'),'utf8');
+  assert.match(app,/kutumb-bhojan-theme-v1/);
+  assert.match(app,/serviceWorker\.register\('\/service-worker\.js'\)/);
+  assert.match(index,/color-scheme/);
+  assert.match(sw,/CACHE = 'kutumb-bhojan-shell-v3'/);
+  assert.match(manifest,/"display":"standalone"/);
 });
