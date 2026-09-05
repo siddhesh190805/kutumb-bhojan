@@ -24,4 +24,4 @@ Starter data is embedded in `app.js`. User edits are stored in browser localStor
 
 ## Hosting
 Designed for Vercel Hobby personal/non-commercial use. Free hosting is not represented as a contractual forever guarantee; Vercel's current terms allow it to change or discontinue Hobby.
-Deployment sync
+Deployment 
