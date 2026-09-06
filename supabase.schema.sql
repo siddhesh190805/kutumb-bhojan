@@ -251,3 +251,82 @@ grant select, insert, update, delete on public.household_settings to authenticat
 revoke all on public.health_tips from anon;
 revoke all on public.health_targets from anon;
 revoke all on public.household_settings from anon;
+
+-- Phase 2: canonical ingredients, structured recipe ingredients, dietary rules,
+-- member-level meal assignments, and reusable nutrition education.
+create table if not exists public.ingredients (
+  id uuid primary key default gen_random_uuid(), canonical_key text not null unique,
+  name text not null, marathi_name text not null, aliases jsonb not null default '[]'::jsonb,
+  category text, default_unit text not null check (default_unit in ('g','kg','ml','L','piece','tsp','tbsp','cup')),
+  active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.recipes add column if not exists description text;
+alter table public.recipes add column if not exists marathi_description text;
+alter table public.recipes add column if not exists meal_category text;
+alter table public.recipes add column if not exists meal_role text;
+alter table public.recipes add column if not exists servings numeric not null default 4 check (servings > 0);
+alter table public.recipes add column if not exists cooking_method text;
+alter table public.recipes add column if not exists dietary_flags jsonb not null default '{}'::jsonb;
+alter table public.recipes add column if not exists nutrition_metadata jsonb not null default '{}'::jsonb;
+create table if not exists public.recipe_ingredients (
+  id uuid primary key default gen_random_uuid(), household_id uuid not null references public.households(id) on delete cascade,
+  recipe_id uuid not null references public.recipes(id) on delete cascade, ingredient_id uuid not null references public.ingredients(id) on delete restrict,
+  quantity numeric not null check (quantity >= 0), unit text not null check (unit in ('g','kg','ml','L','piece','tsp','tbsp','cup')),
+  display_text text, preparation text, sort_order integer not null default 0,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(recipe_id,ingredient_id,sort_order)
+);
+create table if not exists public.dietary_rules (
+  id uuid primary key default gen_random_uuid(), household_id uuid not null references public.households(id) on delete cascade,
+  rule_key text not null, ingredient_key text not null, allowed_member_ids jsonb not null default '[]'::jsonb,
+  disallowed_member_ids jsonb not null default '[]'::jsonb, alternate_policy text not null default 'vegetarian-existing',
+  active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(household_id,rule_key)
+);
+create table if not exists public.meal_assignments (
+  id uuid primary key default gen_random_uuid(), household_id uuid not null references public.households(id) on delete cascade,
+  meal_entry_id uuid not null references public.meal_entries(id) on delete cascade, member_id uuid not null references public.family_members(id) on delete cascade,
+  recipe_id uuid references public.recipes(id) on delete set null, portion_factor numeric not null default 1 check(portion_factor>0),
+  assignment_source text not null default 'automatic' check(assignment_source in ('automatic','manual')),
+  automatic_recipe_id uuid references public.recipes(id) on delete set null, override_recipe_id uuid references public.recipes(id) on delete set null,
+  override_reason text, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(meal_entry_id,member_id)
+);
+create table if not exists public.nutrition_education (
+  id uuid primary key default gen_random_uuid(), concept_key text not null unique, title text not null, marathi_title text not null,
+  what text not null, marathi_what text not null, body_use text not null, marathi_body_use text not null,
+  function text not null, marathi_function text not null, why_it_matters text not null, marathi_why_it_matters text not null,
+  food_sources text not null, marathi_food_sources text not null, sort_order integer not null default 0, active boolean not null default true,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.ingredients enable row level security;
+alter table public.recipe_ingredients enable row level security;
+alter table public.dietary_rules enable row level security;
+alter table public.meal_assignments enable row level security;
+alter table public.nutrition_education enable row level security;
+revoke all on public.ingredients from anon; revoke all on public.recipe_ingredients from anon; revoke all on public.dietary_rules from anon; revoke all on public.meal_assignments from anon; revoke all on public.nutrition_education from anon;
+grant select on public.ingredients to authenticated; grant select,insert,update,delete on public.recipe_ingredients to authenticated; grant select,insert,update,delete on public.dietary_rules to authenticated; grant select on public.nutrition_education to authenticated;
+create policy ingredients_authenticated_select on public.ingredients for select to authenticated using(active=true);
+create policy recipe_ingredients_member_all on public.recipe_ingredients for all to authenticated using((select public.is_household_member(household_id))) with check((select public.is_household_member(household_id)));
+create policy dietary_rules_member_all on public.dietary_rules for all to authenticated using((select public.is_household_member(household_id))) with check((select public.is_household_member(household_id)));
+create policy meal_assignments_member_all on public.meal_assignments for all to authenticated using((select public.is_household_member(household_id))) with check((select public.is_household_member(household_id)));
+create policy nutrition_education_authenticated_select on public.nutrition_education for select to authenticated using(active=true);
+
+create or replace function public.validate_phase2_household_integrity() returns trigger language plpgsql security definer set search_path=public as $function$
+declare owner_household uuid;
+begin
+  if tg_table_name='recipe_ingredients' then
+    select household_id into owner_household from public.recipes where id=new.recipe_id;
+    if owner_household is null or owner_household<>new.household_id then raise exception 'recipe_ingredients household mismatch'; end if;
+  elsif tg_table_name='meal_assignments' then
+    select household_id into owner_household from public.meal_entries where id=new.meal_entry_id;
+    if owner_household is null or owner_household<>new.household_id then raise exception 'meal_assignments meal household mismatch'; end if;
+    select household_id into owner_household from public.family_members where id=new.member_id;
+    if owner_household is null or owner_household<>new.household_id then raise exception 'meal_assignments member household mismatch'; end if;
+    if new.recipe_id is not null then select household_id into owner_household from public.recipes where id=new.recipe_id; if owner_household is null or owner_household<>new.household_id then raise exception 'meal_assignments recipe household mismatch'; end if; end if;
+  end if;
+  return new;
+end; $function$;
+revoke all on function public.validate_phase2_household_integrity() from public,anon,authenticated;
+create index if not exists meal_assignments_member_idx on public.meal_assignments(member_id);
+create index if not exists meal_assignments_recipe_idx on public.meal_assignments(recipe_id);
+create index if not exists meal_assignments_automatic_recipe_idx on public.meal_assignments(automatic_recipe_id);
+create index if not exists meal_assignments_override_recipe_idx on public.meal_assignments(override_recipe_id);
+create index if not exists recipe_ingredients_ingredient_idx on public.recipe_ingredients(ingredient_id);

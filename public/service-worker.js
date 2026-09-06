@@ -1,4 +1,4 @@
-const CACHE = 'kutumb-bhojan-shell-v3';
+const CACHE = 'kutumb-bhojan-shell-v4';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/sync.js', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

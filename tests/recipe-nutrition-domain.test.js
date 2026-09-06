@@ -1,0 +1,168 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  normalizeIngredientAlias, normalizeUnit, convertQuantity, aggregateIngredientLines,
+  mapLegacyRecipeIngredients, deriveRecipeDietaryFlags, evaluateRecipeEligibility,
+  DEFAULT_DIETARY_RULES, rankAlternateRecipes, selectAutomaticAlternate,
+  buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride,
+  mapNutritionEducation, evaluateMealBalance, buildShoppingFromAssignments
+} from '../sync.js';
+
+const catalog = [
+  { canonicalKey:'onion', aliases:['onion','onions','कांदा','कांदे'] },
+  { canonicalKey:'turmeric', aliases:['turmeric','haldi','हळद'] },
+  { canonicalKey:'egg', aliases:['egg','eggs','अंडे','अंडी'] },
+  { canonicalKey:'paneer', aliases:['paneer','पनीर'] },
+  { canonicalKey:'moong_dal', aliases:['moong dal','मूग डाळ'] },
+  { canonicalKey:'wheat_roti', aliases:['roti','whole-wheat roti','पोळी'] },
+  { canonicalKey:'spinach', aliases:['spinach','palak','पालक'] }
+];
+
+test('normalizes English, plural, and Marathi aliases to one canonical ingredient', () => {
+  assert.equal(normalizeIngredientAlias('कांदे', catalog), 'onion');
+  assert.equal(normalizeIngredientAlias('onions', catalog), 'onion');
+});
+
+test('accepts only the Phase 2 unit catalog', () => {
+  assert.equal(normalizeUnit('kg'), 'kg');
+  assert.equal(normalizeUnit('count'), 'piece');
+  assert.equal(normalizeUnit('handful'), null);
+});
+
+test('converts mass and volume only within safe dimensions', () => {
+  assert.equal(convertQuantity(1, 'kg', 'g'), 1000);
+  assert.equal(convertQuantity(1, 'L', 'ml'), 1000);
+  assert.equal(convertQuantity(1, 'kg', 'ml'), null);
+});
+
+test('keeps unsafe unit buckets separate during shopping aggregation', () => {
+  assert.deepEqual(aggregateIngredientLines([
+    { ingredientKey:'onion', quantity:500, unit:'g' },
+    { ingredientKey:'onion', quantity:1, unit:'piece' }
+  ]), [
+    { ingredientKey:'onion', quantity:500, unit:'g' },
+    { ingredientKey:'onion', quantity:1, unit:'piece' }
+  ]);
+});
+
+test('maps known recipe ingredient aliases and preserves unmapped legacy lines', () => {
+  const mapped = mapLegacyRecipeIngredients({ingredients:['250 g onion','1 tsp turmeric']}, catalog);
+  assert.equal(mapped.structured.length,2);
+  assert.equal(mapped.structured[0].ingredientKey,'onion');
+  const unknown = mapLegacyRecipeIngredients({ingredients:['1 handful unknown greens']}, catalog);
+  assert.equal(unknown.structured.length,0);
+  assert.deepEqual(unknown.legacyUnmapped,['1 handful unknown greens']);
+});
+
+test('derives egg presence from canonical ingredient identity', () => {
+  const flags = deriveRecipeDietaryFlags({ingredients:[{ingredientKey:'egg',quantity:2,unit:'piece'}]});
+  assert.equal(flags.containsEgg,true);
+  assert.equal(flags.vegetarian,false);
+});
+
+test('applies the household eligibility rule to all four members', () => {
+  const recipe={dietaryFlags:{containsEgg:true}};
+  assert.equal(evaluateRecipeEligibility({id:'siddhesh',name:'Siddhesh'},recipe,DEFAULT_DIETARY_RULES).eligible,true);
+  assert.equal(evaluateRecipeEligibility({id:'tejas',name:'Tejas'},recipe,DEFAULT_DIETARY_RULES).eligible,true);
+  assert.equal(evaluateRecipeEligibility({id:'vikas',name:'Vikas'},recipe,DEFAULT_DIETARY_RULES).eligible,false);
+  assert.equal(evaluateRecipeEligibility({id:'namrata',name:'Namrata'},recipe,DEFAULT_DIETARY_RULES).eligible,false);
+});
+
+test('prefers an existing vegetarian recipe with same role and function', () => {
+  const candidates=[
+    {id:'a',name:'Veg Main',mealRole:'main',mealCategory:'breakfast',dietaryFlags:{vegetarian:true},dishFunction:'savory-main',nutrition:{proteinRole:'legume'}},
+    {id:'b',name:'Veg Side',mealRole:'side',mealCategory:'breakfast',dietaryFlags:{vegetarian:true},dishFunction:'savory-main',nutrition:{proteinRole:'legume'}}
+  ];
+  const ranked=rankAlternateRecipes({mealRole:'main',mealCategory:'breakfast',dishFunction:'savory-main',nutrition:{proteinRole:'legume'}},{id:'vikas',name:'Vikas'},candidates);
+  assert.equal(ranked[0].id,'a');
+});
+
+test('returns an explicit no-alternate result instead of fabricating a recipe', () => {
+  const result=selectAutomaticAlternate({dietaryFlags:{containsEgg:true}},{id:'vikas',name:'Vikas'},[]);
+  assert.equal(result.recipe,null);
+  assert.match(result.reason,/no suitable/i);
+});
+
+const members=[{id:'siddhesh',name:'Siddhesh'},{id:'tejas',name:'Tejas'},{id:'vikas',name:'Vikas'},{id:'namrata',name:'Namrata'}];
+const recipes=[
+  {id:'egg-recipe',name:'Egg Bhurji',mealRole:'main',mealCategory:'breakfast',dishFunction:'savory-main',dietaryFlags:{containsEgg:true,vegetarian:false},nutrition:{proteinRole:'egg'}},
+  {id:'veg-alternate',name:'Paneer Bhurji',mealRole:'main',mealCategory:'breakfast',dishFunction:'savory-main',dietaryFlags:{containsEgg:false,vegetarian:true},nutrition:{proteinRole:'dairy'}},
+  {id:'another-veg',name:'Moong Chilla',mealRole:'main',mealCategory:'breakfast',dishFunction:'savory-main',dietaryFlags:{containsEgg:false,vegetarian:true},nutrition:{proteinRole:'legume'}}
+];
+const mealEntry={id:'2026-09-07-Breakfast',date:'2026-09-07',slot:'Breakfast',recipeId:'egg-recipe'};
+function recipeFor(as,id){return as.find(x=>x.memberId===id)?.recipeId}
+
+test('egg meal assigns egg recipe to Siddhesh/Tejas and vegetarian alternate to Vikas/Namrata',()=>{
+  const a=buildAutomaticAssignments(mealEntry,members,recipes,DEFAULT_DIETARY_RULES);
+  assert.equal(recipeFor(a,'siddhesh'),'egg-recipe');
+  assert.equal(recipeFor(a,'tejas'),'egg-recipe');
+  assert.equal(recipeFor(a,'vikas'),'veg-alternate');
+  assert.equal(recipeFor(a,'namrata'),'veg-alternate');
+});
+
+test('day-level override changes only one assignment and can be reverted',()=>{
+  const original=buildAutomaticAssignments(mealEntry,members,recipes,DEFAULT_DIETARY_RULES);
+  const changed=applyDayLevelOverride(original,'vikas','another-veg');
+  assert.equal(recipeFor(changed,'vikas'),'another-veg');
+  assert.equal(recipeFor(changed,'namrata'),'veg-alternate');
+  const reverted=revertDayLevelOverride(changed,'vikas');
+  assert.equal(recipeFor(reverted,'vikas'),'veg-alternate');
+});
+
+test('maps reusable bilingual nutrition education without calorie metrics',()=>{
+  const mapped=mapNutritionEducation([{concept_key:'protein',title:'Protein',marathi_title:'प्रथिने',what:'A nutrient.',marathi_what:'पोषक घटक.',body_use:'Tissues',marathi_body_use:'ऊती',function:'Build and repair',marathi_function:'तयार व दुरुस्ती',why_it_matters:'Growth',marathi_why_it_matters:'वाढ',food_sources:'Dal',marathi_food_sources:'डाळी',active:true}]);
+  assert.equal(mapped[0].title,'Protein');
+  assert.equal(mapped[0].marathiTitle,'प्रथिने');
+  assert.equal('calories' in mapped[0],false);
+});
+
+test('meal balance reports evidence instead of a pseudo-precise score',()=>{
+  const as=[{memberId:'siddhesh',recipeId:'r1',portionFactor:1}];
+  const rs=[{id:'r1',nutrition:{proteinRole:'legume'},dietaryFlags:{vegetables:true,legumes:true,wholeGrains:true,fruit:false}}];
+  const result=evaluateMealBalance(as,rs);
+  assert.equal(result.score,undefined);
+  assert.ok(result.indicators.some(x=>x.key==='protein_source'));
+  assert.ok(result.indicators.some(x=>x.key==='vegetable_component'));
+});
+
+test('shopping aggregates canonical ingredients by assignment portion',()=>{
+  const as=[{memberId:'siddhesh',recipeId:'r1',portionFactor:1},{memberId:'tejas',recipeId:'r1',portionFactor:1}];
+  const rs=[{id:'r1'}];
+  const ri=[{recipeId:'r1',ingredientKey:'onion',quantity:250,unit:'g'}];
+  const shopping=buildShoppingFromAssignments(as,rs,ri,catalog);
+  assert.equal(shopping.find(x=>x.canonicalKey==='onion').quantity,500);
+});
+
+test('day-level override is scoped to one meal entry',()=>{
+  const input=[{mealEntryId:'day-a',memberId:'vikas',recipeId:'a',automaticRecipeId:'a'},{mealEntryId:'day-b',memberId:'vikas',recipeId:'b',automaticRecipeId:'b'}];
+  assert.equal(applyDayLevelOverride(input,'vikas','x','day-a')[1].recipeId,'b');
+  assert.equal(revertDayLevelOverride(applyDayLevelOverride(input,'vikas','x','day-a'),'vikas','day-a')[0].recipeId,'a');
+});
+
+test('Phase 2 UI exposes transparent alternate and balance controls',()=>{
+  const source=fs.readFileSync(path.join(process.cwd(),'app.js'),'utf8');
+  assert.match(source,/Change for this day/);
+  assert.match(source,/Revert to automatic/);
+  assert.match(source,/Meal balance/);
+  assert.match(source,/buildShoppingFromAssignments/);
+});
+
+test('backup state contains structured recipe ingredients and meal assignments',()=>{
+  const source=fs.readFileSync(path.join(process.cwd(),'app.js'),'utf8');
+  assert.match(source,/function buildBackupPayload/);
+  assert.match(source,/mealAssignments:sourceState\.mealAssignments/);
+  assert.match(source,/version:2/);
+  assert.match(source,/buildBackupPayload/);
+});
+
+test('Phase 2 migration defines canonical tables and RLS',()=>{
+  const sql=fs.readFileSync(path.join(process.cwd(),'supabase/migrations/20260906_recipe_nutrition_shopping.sql'),'utf8');
+  assert.match(sql,/create table if not exists public\.ingredients/i);
+  assert.match(sql,/create table if not exists public\.recipe_ingredients/i);
+  assert.match(sql,/create table if not exists public\.meal_assignments/i);
+  assert.match(sql,/create table if not exists public\.nutrition_education/i);
+  assert.match(sql,/enable row level security/i);
+  assert.doesNotMatch(sql,/calorie.*target/i);
+});

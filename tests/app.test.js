@@ -59,6 +59,6 @@ test('theme and PWA shell are wired',()=>{
   assert.match(app,/kutumb-bhojan-theme-v1/);
   assert.match(app,/serviceWorker\.register\('\/service-worker\.js'\)/);
   assert.match(index,/color-scheme/);
-  assert.match(sw,/CACHE = 'kutumb-bhojan-shell-v3'/);
+  assert.match(sw,/CACHE = 'kutumb-bhojan-shell-v4'/);
   assert.match(manifest,/"display":"standalone"/);
 });
