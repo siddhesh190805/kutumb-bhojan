@@ -7,7 +7,7 @@ import {
   mapLegacyRecipeIngredients, deriveRecipeDietaryFlags, evaluateRecipeEligibility,
   DEFAULT_DIETARY_RULES, rankAlternateRecipes, selectAutomaticAlternate,
   buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride,
-  mapNutritionEducation, evaluateMealBalance, buildShoppingFromAssignments
+  mapNutritionEducation, getRecipeNutritionConcepts, evaluateMealBalance, buildShoppingFromAssignments
 } from '../sync.js';
 
 const catalog = [
@@ -165,4 +165,27 @@ test('Phase 2 migration defines canonical tables and RLS',()=>{
   assert.match(sql,/create table if not exists public\.nutrition_education/i);
   assert.match(sql,/enable row level security/i);
   assert.doesNotMatch(sql,/calorie.*target/i);
+});
+
+test('maps a recipe to reusable nutrition learning concepts without calorie metrics',()=>{
+  const education=[
+    {id:'protein',title:'Protein',marathiTitle:'प्रथिने'},
+    {id:'vegetables',title:'Vegetables',marathiTitle:'भाज्या'},
+    {id:'whole_grains',title:'Whole grains',marathiTitle:'पूर्ण धान्ये'}
+  ];
+  const recipe={nutrition:{proteinRole:'legume',vegetables:true,legumes:true,wholeGrains:true,fruit:false}};
+  const concepts=getRecipeNutritionConcepts(recipe,education);
+  assert.deepEqual(concepts.map(x=>x.id),['protein','vegetables','whole_grains']);
+  assert.equal(concepts.some(x=>/calorie/i.test(x.id||'')),false);
+});
+
+test('nutrition learning UI connects meals, foods, and reusable bilingual concepts',()=>{
+  const source=fs.readFileSync(path.join(process.cwd(),'app.js'),'utf8');
+  assert.match(source,/What are we eating today\?/);
+  assert.match(source,/Food sources/);
+  assert.match(source,/Nutrition explained/);
+  assert.match(source,/getRecipeNutritionConcepts/);
+  assert.match(source,/data-nutrition-concept/);
+  assert.match(fs.readFileSync(path.join(process.cwd(),'styles.css'),'utf8'),/nutrition-class-grid/);
+  assert.match(fs.readFileSync(path.join(process.cwd(),'styles.css'),'utf8'),/food-learning/);
 });

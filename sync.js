@@ -202,6 +202,21 @@ function mapNutritionEducation(rows) {
   }));
 }
 function getNutritionEducation(conceptKey, education) { return (education || []).find(x => x.id === conceptKey) || null; }
+function getRecipeNutritionConcepts(recipe, education) {
+  const r = recipe || {};
+  const n = r.nutrition || {};
+  const concepts = new Set();
+  if (n.proteinRole) { concepts.add('protein'); concepts.add('main_protein'); }
+  if (n.vegetables) concepts.add('vegetables');
+  if (n.fruit) concepts.add('fruits');
+  if (n.wholeGrains) concepts.add('whole_grains');
+  if (n.legumes) { concepts.add('legumes'); concepts.add('fibre'); }
+  if (n.vegetables || n.fruit || n.wholeGrains) concepts.add('fibre');
+  if (r.oil || n.oilMlPerServing != null) concepts.add('fat_quality');
+  return (education || [])
+    .filter(x => concepts.has(x.id))
+    .sort((a,b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999));
+}
 
 function evaluateMealBalance(assignments, recipes) {
   const assignedRecipes = (assignments || []).map(a => (recipes || []).find(r => r.id === a.recipeId)).filter(Boolean);
@@ -284,5 +299,5 @@ function buildStructuredRecipe(recipe, recipeIngredients, ingredientCatalog) {
   return {...recipe,legacyIngredients:legacy,ingredients:structured,legacyUnmapped:mapped.length ? [] : fallback.legacyUnmapped,mealCategory:recipe.mealCategory||recipe.course,mealRole,dishFunction,dietaryFlags,nutrition};
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules});
-export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules};
+if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules});
+export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules};
