@@ -47,7 +47,13 @@ function resolveVoice(voices, targetLang) {
   const prefix = voices.find(v => (v.lang || '').toLowerCase().replace('_', '-').startsWith(targetPrefix));
   if (prefix) return prefix;
 
-  // 3. Fallback: null lets browser assign system default voice
+  // 3. Script-compatible fallback: If target is Marathi (Devanagari script), prefer Hindi voice over English default
+  if (targetPrefix === 'mr') {
+    const hindi = voices.find(v => (v.lang || '').toLowerCase().replace('_', '-').startsWith('hi'));
+    if (hindi) return hindi;
+  }
+
+  // 4. Fallback: null lets browser assign system default voice
   return null;
 }
 
@@ -75,6 +81,15 @@ function createTtsController(win = (typeof window !== 'undefined' ? window : nul
   let activeKey = null;
   let listeners = new Set();
   let currentUtterances = [];
+
+  // Listen to browser voice changes if available
+  if (win && win.speechSynthesis && typeof win.speechSynthesis.addEventListener === 'function') {
+    try {
+      win.speechSynthesis.addEventListener('voiceschanged', () => {
+        try { win.speechSynthesis.getVoices(); } catch (e) {}
+      });
+    } catch (e) {}
+  }
 
   function notify(speaking, key) {
     for (const cb of listeners) {
@@ -141,10 +156,19 @@ function createTtsController(win = (typeof window !== 'undefined' ? window : nul
       voices = [];
     }
 
-    let completedCount = 0;
-    const totalUtterances = plans.length;
+    let planIndex = 0;
 
-    plans.forEach((plan, idx) => {
+    function playNext() {
+      if (planIndex >= plans.length) {
+        activeKey = null;
+        currentUtterances = [];
+        notify(false, null);
+        return;
+      }
+
+      const plan = plans[planIndex];
+      planIndex++;
+
       const utterance = new win.SpeechSynthesisUtterance(plan.text);
       utterance.lang = plan.lang;
       utterance.rate = rate;
@@ -156,8 +180,9 @@ function createTtsController(win = (typeof window !== 'undefined' ? window : nul
       }
 
       utterance.onend = () => {
-        completedCount++;
-        if (completedCount >= totalUtterances) {
+        if (planIndex < plans.length) {
+          playNext();
+        } else {
           activeKey = null;
           currentUtterances = [];
           notify(false, null);
@@ -166,22 +191,32 @@ function createTtsController(win = (typeof window !== 'undefined' ? window : nul
 
       utterance.onerror = (err) => {
         console.warn('TTS utterance error', err);
-        activeKey = null;
-        currentUtterances = [];
-        notify(false, null);
+        // If Marathi fails because language is unavailable on this device, don't abort English
+        if (planIndex < plans.length) {
+          playNext();
+        } else {
+          activeKey = null;
+          currentUtterances = [];
+          notify(false, null);
+        }
       };
 
-      currentUtterances.push(utterance);
+      currentUtterances = [utterance];
 
       try {
         synth.speak(utterance);
       } catch (err) {
         console.warn('speechSynthesis.speak error', err);
-        activeKey = null;
-        notify(false, null);
+        if (planIndex < plans.length) {
+          playNext();
+        } else {
+          activeKey = null;
+          notify(false, null);
+        }
       }
-    });
+    }
 
+    playNext();
     return true;
   }
 

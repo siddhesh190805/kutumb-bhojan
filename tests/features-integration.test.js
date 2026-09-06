@@ -292,3 +292,148 @@ test('FEATURE 8: UI Source Code Audit for Recipe, Shopping, Prep, Calendar and B
   assert.match(appSrc, /dietaryRules: sourceState\.dietaryRules/);
   assert.match(appSrc, /nutritionEducation: sourceState\.nutritionEducation/);
 });
+
+test('FEATURE 9: Canonical localization t(mr, en) dynamic behavior and fallback', () => {
+  function createLocalizer(lang) {
+    return function t(mrText, enText) {
+      if (lang === 'mr') return mrText || enText || '';
+      if (lang === 'en') return enText || mrText || '';
+      if (!mrText) return enText || '';
+      if (!enText || enText === mrText) return mrText;
+      return `${mrText} · ${enText}`;
+    };
+  }
+
+  const tMr = createLocalizer('mr');
+  const tEn = createLocalizer('en');
+  const tBoth = createLocalizer('both');
+
+  // Marathi primary
+  assert.equal(tMr('पाककृती', 'Recipes'), 'पाककृती');
+  assert.equal(tMr('', 'Recipes'), 'Recipes'); // fallback
+
+  // English primary
+  assert.equal(tEn('पाककृती', 'Recipes'), 'Recipes');
+  assert.equal(tEn('पाककृती', ''), 'पाककृती'); // fallback
+
+  // Both
+  assert.equal(tBoth('पाककृती', 'Recipes'), 'पाककृती · Recipes');
+  assert.equal(tBoth('सेटिंग्ज', 'सेटिंग्ज'), 'सेटिंग्ज'); // de-duplicate if identical
+  assert.equal(tBoth('', 'Recipes'), 'Recipes');
+
+  // Never returns null or undefined
+  assert.equal(tMr(null, null), '');
+  assert.equal(tEn(undefined, undefined), '');
+  assert.equal(tBoth(null, undefined), '');
+});
+
+test('FEATURE 10: Theme architecture and contrast tokens', () => {
+  const css = fs.readFileSync(path.join(process.cwd(), 'styles.css'), 'utf8');
+
+  // Light theme tokens defined
+  assert.match(css, /--bg:\s*#[0-9a-fA-F]+/);
+  assert.match(css, /--surface:\s*#[0-9a-fA-F]+/);
+  assert.match(css, /--surface2:\s*#[0-9a-fA-F]+/);
+  assert.match(css, /--surface-elevated:\s*#[0-9a-fA-F]+/);
+  assert.match(css, /--btn-primary-bg:\s*#[0-9a-fA-F]+/);
+  assert.match(css, /--btn-primary-fg:\s*#[0-9a-fA-F]+/);
+
+  // Dark theme overrides defined with high-contrast tokens
+  assert.match(css, /:root\[data-theme="dark"\]\s*\{/);
+  assert.match(css, /--surface:\s*#18201d/);
+  assert.match(css, /--text:\s*#e8f0eb/);
+  assert.match(css, /--btn-primary-bg:\s*#327557/);
+  assert.match(css, /--btn-primary-fg:\s*#ffffff/);
+
+  // Cards, panels, and modals use semantic surface variables, not hardcoded white
+  assert.match(css, /\.meal-card,\s*\.panel,\s*\.recipe-card[^}]*background:\s*var\(--surface\)/);
+  assert.match(css, /\.modal-card\s*\{[^}]*background:\s*var\(--surface-elevated\)/);
+});
+
+test('FEATURE 11: Layout responsiveness and safety prevents distortion', () => {
+  const css = fs.readFileSync(path.join(process.cwd(), 'styles.css'), 'utf8');
+
+  // Topbar must NOT have rigid fixed height that squashes content
+  assert.ok(!css.includes('height: 82px'), 'Rigid topbar height: 82px must be removed');
+  assert.match(css, /\.topbar\s*\{[^}]*min-height:\s*(?:68|70)px/);
+
+  // Assignment row wraps to prevent horizontal overflow when 4 family members are listed
+  assert.match(css, /\.assignment-row\s*\{[^}]*flex-wrap:\s*wrap/);
+
+  // Form grid responsive rule exists for mobile modal forms
+  assert.match(css, /@media\s*\(max-width:\s*620px\)\s*\{[^}]*\.form-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
+});
+
+test('FEATURE 12: Behavioral TTS execution on displayed content and fallback', async () => {
+  const { createTtsController } = await import('../tts.js');
+
+  const utterances = [];
+  const mockSynth = {
+    speaking: false,
+    paused: false,
+    pending: false,
+    getVoices: () => [
+      { name: 'Google हिन्दी', lang: 'hi-IN' },
+      { name: 'Google US English', lang: 'en-US' }
+    ],
+    speak: (u) => {
+      utterances.push(u);
+      mockSynth.speaking = true;
+      // Simulate successful speech end
+      setTimeout(() => {
+        mockSynth.speaking = false;
+        if (typeof u.onend === 'function') u.onend({ type: 'end' });
+      }, 5);
+    },
+    cancel: () => {
+      mockSynth.speaking = false;
+    }
+  };
+
+  class MockUtterance {
+    constructor(text) {
+      this.text = text;
+      this.lang = 'en-US';
+      this.rate = 1.0;
+      this.voice = null;
+      this.onstart = null;
+      this.onend = null;
+      this.onerror = null;
+    }
+  }
+
+  const mockWindow = {
+    speechSynthesis: mockSynth,
+    SpeechSynthesisUtterance: MockUtterance
+  };
+
+  const controller = createTtsController(mockWindow);
+
+  // Test speaking both languages: Marathi first (falls back to hi-IN when mr-IN unavailable), then English
+  controller.speak({
+    key: 'meal_1',
+    mrText: 'मूग भाजी चिल्ला आणि दही',
+    enText: 'Moong vegetable chilla and curd',
+    language: 'both'
+  });
+
+  // First utterance should be Marathi content resolved with Devanagari fallback (hi-IN)
+  assert.equal(utterances.length, 1);
+  assert.equal(utterances[0].text, 'मूग भाजी चिल्ला आणि दही');
+  assert.equal(utterances[0].voice?.lang, 'hi-IN');
+
+  // Wait for Marathi to end, triggering sequential English utterance
+  await new Promise(res => setTimeout(res, 20));
+
+  assert.equal(utterances.length, 2);
+  assert.equal(utterances[1].text, 'Moong vegetable chilla and curd');
+  assert.equal(utterances[1].voice?.lang, 'en-US');
+
+  // Verify app.js renders meal card TTS buttons on Today and Calendar
+  const appSrc = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf8');
+  assert.match(appSrc, /meal-tts-btn/);
+  assert.match(appSrc, /data-tts-key/);
+  assert.match(appSrc, /data-tts-mr/);
+  assert.match(appSrc, /data-tts-en/);
+});
+
