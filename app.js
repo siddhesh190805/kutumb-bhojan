@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments } from './sync.js';
+import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient } from './sync.js';
 import { tts } from './tts.js';
 
 const SUPABASE_URL='https://wcwwvyreefkrqchfteqp.supabase.co';
@@ -143,7 +143,7 @@ const calendarRecipeObj=calendarRecipeData.map((r,i)=>({id:'cr'+i,name:r[0],mr:r
 const recipeObj=dedupeRecipesByName(recipes.map((r,i)=>({id:'r'+i,name:r[0],mr:r[1],course:r[2],time:r[3],oil:r[4],protein:r[5],fibre:r[6],cal:r[7],ingredients:r[8],method:r[9],note:r[10]})).concat(calendarRecipeObj));
 const shoppingNames=[['Whole-wheat atta','गव्हाचे पीठ','Staples','12–15 kg/month'],['Jowar flour','ज्वारीचे पीठ','Staples','4–5 kg/month'],['Rice','तांदूळ','Staples','4–5 kg/month'],['Poha','पोहे','Staples','2 kg/month'],['Besan','बेसन','Staples','2–3 kg/month'],['Moong dal','मूग डाळ','Pulses & Legumes','2–3 kg/month'],['Mixed dals','मिश्र डाळी','Pulses & Legumes','2–3 kg/month'],['Whole matki','अख्खी मटकी','Pulses & Legumes','2–3 kg/month'],['Chickpeas/kabuli chana','काबुली हरभरा','Pulses & Legumes','2–3 kg dry'],['Rajma','राजमा','Pulses & Legumes','1.5–2 kg dry'],['Lobia','चवळी','Pulses & Legumes','1–1.5 kg dry'],['Paneer','पनीर','Dairy','5–6 kg/month'],['Plain curd','साधे दही','Dairy','10–12 kg/month'],['Milk','दूध','Dairy','10–12 L/month'],['Eggs','अंडी','Eggs','2–3 dozen/month'],['Soy granules','सोया ग्रॅन्युल्स','Pulses & Legumes','1–1.5 kg/month'],['Bhindi','भेंडी','Vegetables','2–3 kg'],['Dudhi/bottle gourd','दुधी भोपळा','Vegetables','2–3 kg'],['Brinjal/vangi','वांगी','Vegetables','1.5–2 kg'],['Cabbage','कोबी','Vegetables','2–3 kg'],['Carrot','गाजर','Vegetables','2 kg'],['Cauliflower','फुलकोबी','Vegetables','1.5–2 kg'],['Spinach/palak','पालक','Vegetables','1.5–2 kg'],['Tomato','टोमॅटो','Vegetables','4–5 kg'],['Cucumber','काकडी','Vegetables','3–4 kg'],['Onion','कांदा','Vegetables','4–5 kg'],['Pomegranate','डाळिंब','Fruits','1.5–2 kg'],['Guava','पेरू','Fruits','2–3 kg'],['Banana','केळी','Fruits','5–7 dozen/month'],['Papaya','पपई','Fruits','3–4 kg'],['Mosambi','मोसंबी','Fruits','2–3 kg'],['Apples','सफरचंद','Fruits','2–3 kg'],['Peanuts','शेंगदाणे','Nuts & Seeds','1.5–2 kg'],['Flaxseed','जवस','Nuts & Seeds','500–750 g'],['Sesame','तीळ','Nuts & Seeds','500 g'],['Pumpkin seeds','भोपळ्याच्या बिया','Nuts & Seeds','300–500 g'],['Roasted chana','भाजलेला हरभरा','Pulses & Legumes','1.5–2 kg'],['Mustard/groundnut oil','मोहरी/शेंगदाणा तेल','Other','2–3 L combined']];
 const prep=[['Sunday batch-cook chickpeas, rajma and lobia','रविवारी हरभरा, राजमा आणि चवळी शिजवून ठेवणे','2026-09-06','Meal Prep'],['Sprout matki and moong','मटकी आणि मूग मोड आणणे','2026-09-06','Batter / Sprouting'],['Prepare dosa/idli batter','डोसा/इडली बॅटर तयार करणे','2026-09-06','Batter / Sprouting'],['Make peanut-coriander chutney powder','शेंगदाणा-कोथिंबीर चटणी पूड तयार करणे','2026-09-06','Meal Prep'],['Make ground flaxseed portion','जवसाची पूड छोटे भाग करून ठेवणे','2026-09-06','Storage'],['Pre-portion roasted chana and peanuts','भाजलेला हरभरा आणि शेंगदाणे मोजून भाग करणे','2026-09-06','Meal Prep'],['Prepare shopping list for Month 1 week 1','पहिल्या आठवड्याची खरेदी यादी तयार करणे','2026-09-06','Shopping'],['Review Vikas food-reaction log','विकासच्या अन्न-प्रतिक्रिया नोंदी तपासणे','2026-09-13','Review']].map((x,i)=>({id:'p'+i,task:x[0],mr:x[1],date:x[2],area:x[3],done:false}));
-const starter={version:2,members:family,meals:makeMeals(),recipes:recipeObj,shopping:shoppingNames.map((x,i)=>({id:'s'+i,item:x[0],mr:x[1],category:x[2],quantity:x[3],need:false,purchased:false})),prep,healthTips:[],healthTargets:[],nutritionEducation:[],ingredientCatalog:[],recipeIngredients:[],mealAssignments:[],dietaryRules:DEFAULT_DIETARY_RULES,householdSettings:{householdSize:4,oilStockMl:5000,oilMonthlyTargetMl:3000,displayName:'कुटुंब भोजन'},updatedAt:new Date().toISOString()};
+const starter={version:2,members:family,meals:makeMeals(),recipes:recipeObj,shopping:shoppingNames.map((x,i)=>({id:'s'+i,item:x[0],mr:x[1],category:x[2],quantity:x[3],need:false,purchased:false})),prep,healthTips:[],healthTargets:[],nutritionEducation:[],ingredientCatalog:[],recipeIngredients:[],mealAssignments:[],dietaryRules:DEFAULT_DIETARY_RULES,frequencyRules:DEFAULT_FREQUENCY_RULES,householdSettings:{householdSize:4,oilStockMl:5000,oilMonthlyTargetMl:3000,displayName:'कुटुंब भोजन'},updatedAt:new Date().toISOString()};
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');return x&&(x.version===1||x.version===2)?{...clone(starter),...x,version:2}:clone(starter)}catch{return clone(starter)}}
 let state=load();
@@ -243,7 +243,7 @@ function ensureAutomaticAssignments(){
  const existing=new Map((state.mealAssignments||[]).map(a=>[`${a.mealEntryId}:${a.memberId}`,a]));
  for(const meal of state.meals){
   const recipe=state.recipes.find(r=>r.name.toLowerCase()===meal.title.toLowerCase());
-  const generated=buildAutomaticAssignments({...meal,recipeId:recipe?.id},state.members,state.recipes,state.dietaryRules?.length?state.dietaryRules:DEFAULT_DIETARY_RULES);
+  const generated=buildAutomaticAssignments({...meal,recipeId:recipe?.id},state.members,state.recipes,state.dietaryRules?.length?state.dietaryRules:DEFAULT_DIETARY_RULES,{assignments:[...existing.values()],meals:state.meals,frequencyRules:state.frequencyRules||DEFAULT_FREQUENCY_RULES});
   for(const a of generated){const key=`${meal.id}:${a.memberId}`;if(!existing.has(key))existing.set(key,a);}
  }
  state.mealAssignments=[...existing.values()];
@@ -392,14 +392,22 @@ function mealAssignmentsView(meal){
         <div class="alternates-title">👨‍👩‍👦 ${t('सदस्य बदल','Member changes')}</div>
         ${grouped.groups.map(g=>{
           const memberList = g.members.map(m=>esc(t(m.mr,m.name))).join(', ');
-          const recName = g.recipe ? esc(t(g.recipe.mr,g.recipe.name)) : t('पर्याय','Alternate');
+          const isMissing = !g.recipe && !g.recipeId;
+          const recName = g.recipe ? esc(t(g.recipe.mr,g.recipe.name)) : (isMissing ? `<span class="alternate-missing-text">${t('पर्याय उपलब्ध नाही','No alternate available')}</span>` : t('पर्याय','Alternate'));
+          const hasFreqNote = g.members.some(m => {
+            const a = assignments.find(x => x.memberId === m.id);
+            return a?.frequencyConstraintApplied || (a?.overrideReason && a.overrideReason.includes('frequency'));
+          });
           const tag = g.hasOverride
             ? `<span class="override-tag">${t('बदल','Override')}</span>`
-            : g.hasAutoAlternate
-              ? `<span class="alternate-note">${t('ऑटो पर्याय','Auto alternate')}</span>`
-              : '';
+            : hasFreqNote
+              ? `<span class="frequency-tag" title="${t('पनीर मासिक मर्यादा (५/महिना) पाळण्यासाठी पर्याय','Selected alternate respecting monthly paneer limit')}">🧀 ${t('पनीर मर्यादा प्राधान्य','Frequency preference')}</span>`
+              : g.hasAutoAlternate
+                ? `<span class="alternate-note">${t('ऑटो पर्याय','Auto alternate')}</span>`
+                : '';
           return `<div class="alternate-row"><b>${memberList}:</b> <span>${recName}</span> ${tag}</div>`;
         }).join('')}
+        ${assignments.some(a=>!a.recipeId&&a.overrideReason&&a.overrideReason.includes('frequency'))?`<div class="alternate-warning">⚠️ ${t('कुटुंब नियोजन प्राधान्यांच्या मर्यादेत योग्य शाकाहारी पर्याय उपलब्ध नाही','No suitable alternate within household frequency preferences')}</div>`:''}
       </div>`;
 
  return `<div class="meal-assignments">
@@ -828,6 +836,17 @@ function settings(){
    <label class="field"><span>${t('कुटुंबातील व्यक्ती संख्या','Household size')}</span><input id="householdSize" type="number" min="1" max="20" step="1" value="${esc(s.householdSize)}"></label>
    <div class="oil-advice"><b>${t('कुठे कमी करायचे?','Where to moderate?')}</b><p>${t('डीप-फ्राय, जास्त तेलाचा तडका आणि खूप तेलकट gravy आधी कमी करा. मोजून तेल वापरा; योग्य ठिकाणी भाजणे, वाफवणे किंवा pressure cooking वापरा.','Reduce deep frying, heavy tadka, and oily gravies. Measure oil, and prefer steaming, roasting, or pressure cooking.')}</p></div>
    <button class="primary" data-save-settings>${t('Settings जतन करा','Save settings')}</button>
+  </div>
+  <div class="panel">
+   <h3>🧀 ${t('घरगुती नियोजन प्राधान्ये','Household Planning Preferences')}</h3>
+   <p>${t('पनीर मासिक वारंवारता मर्यादा (घरगुती नियोजन प्राधान्य, वैद्यकीय सल्ला नाही).','Paneer monthly frequency limit (household planning preference, not medical advice).')}</p>
+   <div class="frequency-status-box">
+    <div class="frequency-status-row">
+     <span><b>${t('पनीर वापर (या महिन्यात):','Paneer planned (this month):')}</b></span>
+     <strong>${countIngredientMonthlyOccurrences({assignments:state.mealAssignments,recipes:state.recipes,meals:state.meals,ingredientKey:'paneer',month:selectedDate.slice(0,7)})} / 5 ${t('जेवण','meals')}</strong>
+    </div>
+    <small class="muted">${t('कॅलेंडर महिन्यात जास्तीत जास्त ५ वेळा पनीरचे जेवण. मर्यादा संपल्यावर इतर शाकाहारी पर्यायांना प्राधान्य दिले जाते.','Maximum 5 paneer meals per calendar month. When reached, other vegetarian alternates are preferred.')}</small>
+   </div>
   </div>
   <div class="panel">
    <h3>💾 ${t('बॅकअप','Backup')}</h3>

@@ -24,9 +24,12 @@ import {
   mapRecipeIngredients,
   mapMealAssignments,
   buildStructuredRecipe,
-  mapDietaryRules,
   getRecipeNutritionConcepts,
-  groupMemberAssignments
+  groupMemberAssignments,
+  DEFAULT_FREQUENCY_RULES,
+  recipeContainsIngredient,
+  countIngredientMonthlyOccurrences,
+  getHouseholdFrequencyStatus
 } from '../sync.js';
 
 const mockCatalog = [
@@ -539,5 +542,208 @@ test('FEATURE 15: Dark theme contrast and token safety', () => {
   assert.match(appSrc, /member-editor-details/);
   assert.match(appSrc, /Change for this day/);
   assert.match(appSrc, /Revert to automatic/);
+});
+
+test('FEATURE 16: Household Paneer Monthly Frequency Constraint & Alternate Ranking', () => {
+  const eggRecipe = buildStructuredRecipe({
+    id: 'r_egg_bhurji',
+    name: 'Egg Bhurji + Roti',
+    mealCategory: 'breakfast',
+    mealRole: 'main',
+    dishFunction: 'savory-main',
+    nutrition: { proteinRole: 'egg' },
+    dietaryFlags: { containsEgg: true, vegetarian: false },
+    ingredients: ['8 eggs', '200 g onion', '8 rotis', '8 ml oil']
+  }, [], []);
+
+  const paneerRecipe = buildStructuredRecipe({
+    id: 'r_paneer_bhurji',
+    name: 'Paneer Bhurji + Roti',
+    mealCategory: 'breakfast',
+    mealRole: 'main',
+    dishFunction: 'savory-main',
+    nutrition: { proteinRole: 'dairy' },
+    dietaryFlags: { containsEgg: false, vegetarian: true },
+    ingredients: ['400 g paneer', '200 g onion', '10 ml oil']
+  }, [], []);
+
+  const chillaRecipe = buildStructuredRecipe({
+    id: 'r_moong_chilla',
+    name: 'Moong Vegetable Chilla',
+    mealCategory: 'breakfast',
+    mealRole: 'main',
+    dishFunction: 'savory-main',
+    nutrition: { proteinRole: 'legume' },
+    dietaryFlags: { containsEgg: false, vegetarian: true },
+    ingredients: ['200 g soaked moong dal', '100 g vegetables', '10 ml oil']
+  }, [], []);
+
+  const testVikas = { id: 'vikas', name: 'Vikas', mr: 'विकास' };
+  const allCandidates = [eggRecipe, paneerRecipe, chillaRecipe];
+
+  // 1. 0 paneer meals in month -> paneer alternate allowed
+  const res0 = selectAutomaticAlternate(eggRecipe, testVikas, allCandidates, {
+    assignments: [],
+    targetDate: '2026-09-01'
+  });
+  assert.equal(res0.recipe?.id, paneerRecipe.id);
+  assert.equal(res0.frequencyConstraintApplied, false);
+
+  // 2. Helper to generate N shared paneer meals in September
+  function makePaneerMealAssignments(count, month = '2026-09') {
+    const arr = [];
+    for (let i = 1; i <= count; i++) {
+      const dayStr = String(i).padStart(2, '0');
+      const mealId = `meal-${month}-${dayStr}-lunch`;
+      // Each meal has 4 family members eating the same paneer recipe
+      for (const m of ['vikas', 'namrata', 'tejas', 'siddhesh']) {
+        arr.push({
+          id: `${mealId}:${m}`,
+          mealEntryId: mealId,
+          memberId: m,
+          recipeId: paneerRecipe.id,
+          portionFactor: 1,
+          assignmentSource: 'automatic',
+          automaticRecipeId: paneerRecipe.id,
+          overrideRecipeId: null,
+          overrideReason: null
+        });
+      }
+    }
+    return arr;
+  }
+
+  // 3. Shared family meal is counted once, not four times
+  const oneSharedMeal = makePaneerMealAssignments(1, '2026-09');
+  assert.equal(oneSharedMeal.length, 4, '4 individual member assignment rows');
+  const countShared = countIngredientMonthlyOccurrences({
+    assignments: oneSharedMeal,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  });
+  assert.equal(countShared, 1, '1 shared meal event must count as exactly 1 paneer occurrence, not 4');
+
+  // 4. 4 paneer occurrences -> 5th allowed
+  const fourPaneerMeals = makePaneerMealAssignments(4, '2026-09');
+  assert.equal(countIngredientMonthlyOccurrences({
+    assignments: fourPaneerMeals,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  }), 4);
+  const res4 = selectAutomaticAlternate(eggRecipe, testVikas, allCandidates, {
+    assignments: fourPaneerMeals,
+    targetDate: '2026-09-05',
+    mealEntryId: 'meal-2026-09-05-breakfast'
+  });
+  assert.equal(res4.recipe?.id, paneerRecipe.id, '5th paneer meal in calendar month must be allowed');
+  assert.equal(res4.frequencyConstraintApplied, false);
+
+  // 5. 5 paneer occurrences -> 6th paneer alternate rejected, non-paneer alternate preferred
+  const fivePaneerMeals = makePaneerMealAssignments(5, '2026-09');
+  assert.equal(countIngredientMonthlyOccurrences({
+    assignments: fivePaneerMeals,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  }), 5);
+  const res5 = selectAutomaticAlternate(eggRecipe, testVikas, allCandidates, {
+    assignments: fivePaneerMeals,
+    targetDate: '2026-09-06',
+    mealEntryId: 'meal-2026-09-06-breakfast'
+  });
+  assert.equal(res5.recipe?.id, chillaRecipe.id, '6th paneer meal must be rejected; next suitable non-paneer vegetarian alternate must be selected');
+  assert.equal(res5.frequencyConstraintApplied, true);
+  assert.match(res5.reason, /frequency preference/i);
+
+  // 6. No suitable non-paneer alternate -> explicit constraint warning without fabricating a fake dish
+  const resNoAlt = selectAutomaticAlternate(eggRecipe, testVikas, [eggRecipe, paneerRecipe], {
+    assignments: fivePaneerMeals,
+    targetDate: '2026-09-07',
+    mealEntryId: 'meal-2026-09-07-breakfast'
+  });
+  assert.equal(resNoAlt.recipe, null, 'Must not invent an unapproved dish');
+  assert.equal(resNoAlt.frequencyConstraintViolated, true);
+  assert.match(resNoAlt.reason, /household frequency preferences/i);
+
+  // 7. Override can move paneer usage between dates correctly
+  // Start with 5 paneer meals: Meal 1 through Meal 5
+  let dynamicAssignments = makePaneerMealAssignments(5, '2026-09');
+  assert.equal(countIngredientMonthlyOccurrences({ assignments: dynamicAssignments, recipes: allCandidates, month: '2026-09' }), 5);
+
+  // Override Meal 1 for all members from Paneer to Chilla (non-paneer)
+  for (const m of ['vikas', 'namrata', 'tejas', 'siddhesh']) {
+    dynamicAssignments = applyDayLevelOverride(dynamicAssignments, m, chillaRecipe.id, 'meal-2026-09-01-lunch');
+  }
+  // Now effective paneer count for September must drop to 4!
+  const countAfterOverride = countIngredientMonthlyOccurrences({
+    assignments: dynamicAssignments,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  });
+  assert.equal(countAfterOverride, 4, 'Overriding a paneer meal to non-paneer must reduce effective monthly count');
+
+  // Now, evaluating a new meal in September allows paneer again because count is 4!
+  const resAllowAgain = selectAutomaticAlternate(eggRecipe, testVikas, allCandidates, {
+    assignments: dynamicAssignments,
+    targetDate: '2026-09-25',
+    mealEntryId: 'meal-2026-09-25-breakfast'
+  });
+  assert.equal(resAllowAgain.recipe?.id, paneerRecipe.id, 'Paneer meal is now permitted again as monthly count was reduced to 4');
+
+  // 8. Reverting override restores correct monthly count
+  for (const m of ['vikas', 'namrata', 'tejas', 'siddhesh']) {
+    dynamicAssignments = revertDayLevelOverride(dynamicAssignments, m, 'meal-2026-09-01-lunch');
+  }
+  const countAfterRevert = countIngredientMonthlyOccurrences({
+    assignments: dynamicAssignments,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  });
+  assert.equal(countAfterRevert, 5, 'Reverting override must restore original monthly paneer count of 5');
+
+  // 9. Different calendar months have independent counts
+  // September has 5 paneer meals; October has 0 paneer meals
+  const countOct = countIngredientMonthlyOccurrences({
+    assignments: fivePaneerMeals,
+    recipes: allCandidates,
+    ingredientKey: 'paneer',
+    month: '2026-10'
+  });
+  assert.equal(countOct, 0, 'October must have independent count of 0');
+
+  const resOct = selectAutomaticAlternate(eggRecipe, testVikas, allCandidates, {
+    assignments: fivePaneerMeals,
+    targetDate: '2026-10-02',
+    mealEntryId: 'meal-2026-10-02-breakfast'
+  });
+  assert.equal(resOct.recipe?.id, paneerRecipe.id, 'October meal must allow paneer even when September reached its limit');
+  assert.equal(resOct.frequencyConstraintApplied, false);
+
+  // 10. Household planning preference metadata (not medical advice)
+  const status = getHouseholdFrequencyStatus({
+    assignments: fivePaneerMeals,
+    recipes: allCandidates,
+    month: '2026-09',
+    frequencyRules: DEFAULT_FREQUENCY_RULES
+  });
+  assert.equal(status.length, 1);
+  assert.equal(status[0].key, 'paneer-monthly-frequency');
+  assert.equal(status[0].preferenceType, 'household_planning', 'Must be categorized as household planning');
+  assert.equal(status[0].currentOccurrences, 5);
+  assert.equal(status[0].maxPerCalendarMonth, 5);
+  assert.equal(status[0].limitReached, true);
+  assert.match(DEFAULT_FREQUENCY_RULES[0].description, /household planning preference, not a medical restriction/i);
+  assert.match(DEFAULT_FREQUENCY_RULES[0].marathiDescription, /घरगुती नियोजन प्राधान्य, वैद्यकीय सल्ला नाही/i);
+
+  // Verify app.js UI reflects household planning preference (not clinical advice)
+  const appSrc = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf8');
+  assert.match(appSrc, /घरगुती नियोजन प्राधान्ये/);
+  assert.match(appSrc, /Household Planning Preferences/);
+  assert.match(appSrc, /वैद्यकीय सल्ला नाही/);
+  assert.match(appSrc, /not medical advice/);
 });
 

@@ -9,7 +9,7 @@ import {
   DEFAULT_DIETARY_RULES, rankAlternateRecipes, selectAutomaticAlternate,
   buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride,
   mapNutritionEducation, getRecipeNutritionConcepts, evaluateMealBalance, buildShoppingFromAssignments,
-  buildStructuredRecipe
+  buildStructuredRecipe, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient
 } from '../sync.js';
 
 const catalog = [
@@ -276,4 +276,43 @@ test('nutrition learning UI connects meals, foods, and reusable bilingual concep
   assert.match(source,/data-nutrition-concept/);
   assert.match(fs.readFileSync(path.join(process.cwd(),'styles.css'),'utf8'),/nutrition-class-grid/);
   assert.match(fs.readFileSync(path.join(process.cwd(),'styles.css'),'utf8'),/food-learning/);
+});
+
+test('household frequency planning rule enforces monthly paneer limit without pseudo-medical restrictions',()=>{
+  assert.ok(Array.isArray(DEFAULT_FREQUENCY_RULES));
+  const paneerRule = DEFAULT_FREQUENCY_RULES.find(r => r.ingredientKey === 'paneer');
+  assert.ok(paneerRule);
+  assert.equal(paneerRule.maxPerCalendarMonth, 5);
+  assert.equal(paneerRule.preferenceType, 'household_planning');
+  assert.match(paneerRule.description, /household planning preference, not a medical restriction/i);
+
+  const paneerRecipe = { id: 'p1', name: 'Paneer Bhurji', ingredients: [{ ingredientKey: 'paneer', quantity: 200, unit: 'g' }] };
+  const vegRecipe = { id: 'v1', name: 'Moong Chilla', ingredients: [{ ingredientKey: 'moong_dal', quantity: 150, unit: 'g' }] };
+
+  assert.equal(recipeContainsIngredient(paneerRecipe, 'paneer'), true);
+  assert.equal(recipeContainsIngredient(vegRecipe, 'paneer'), false);
+
+  // 4 family members in 1 shared meal entry
+  const sharedMeal = [
+    { mealEntryId: '2026-09-01-lunch', memberId: 'vikas', recipeId: 'p1' },
+    { mealEntryId: '2026-09-01-lunch', memberId: 'namrata', recipeId: 'p1' },
+    { mealEntryId: '2026-09-01-lunch', memberId: 'tejas', recipeId: 'p1' },
+    { mealEntryId: '2026-09-01-lunch', memberId: 'siddhesh', recipeId: 'p1' }
+  ];
+  const count = countIngredientMonthlyOccurrences({
+    assignments: sharedMeal,
+    recipes: [paneerRecipe, vegRecipe],
+    ingredientKey: 'paneer',
+    month: '2026-09'
+  });
+  assert.equal(count, 1, '4 member rows for 1 meal entry must only count as 1 occurrence');
+
+  const status = getHouseholdFrequencyStatus({
+    assignments: sharedMeal,
+    recipes: [paneerRecipe, vegRecipe],
+    month: '2026-09'
+  });
+  assert.equal(status[0].currentOccurrences, 1);
+  assert.equal(status[0].remaining, 4);
+  assert.equal(status[0].limitReached, false);
 });

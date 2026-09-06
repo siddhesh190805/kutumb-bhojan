@@ -169,6 +169,133 @@ const DEFAULT_DIETARY_RULES = [
   { key:'egg-eligibility', ingredientKey:'egg', allowedMemberIds:['siddhesh','tejas'], disallowedMemberIds:['vikas','namrata'], alternatePolicy:'vegetarian-existing' }
 ];
 
+const DEFAULT_FREQUENCY_RULES = [
+  {
+    key: 'paneer-monthly-frequency',
+    ingredientKey: 'paneer',
+    maxPerCalendarMonth: 5,
+    period: 'calendar-month',
+    ruleType: 'ingredient_frequency',
+    preferenceType: 'household_planning',
+    label: 'Paneer monthly planning limit',
+    marathiLabel: 'पनीर मासिक नियोजन मर्यादा',
+    description: 'Paneer should be planned no more than 5 times per calendar month (household planning preference, not a medical restriction).',
+    marathiDescription: 'एका कॅलेंडर महिन्यात ५ पेक्षा जास्त वेळा पनीरचे जेवण नको (घरगुती नियोजन प्राधान्य, वैद्यकीय सल्ला नाही).'
+  }
+];
+
+function recipeContainsIngredient(recipe, ingredientKey = 'paneer') {
+  if (!recipe) return false;
+  if (Array.isArray(recipe.ingredients) && recipe.ingredients.length) {
+    const hasKey = recipe.ingredients.some(ing => {
+      if (typeof ing === 'string') {
+        const s = ing.toLowerCase();
+        const aliases = ingredientKey === 'paneer' ? ['paneer', 'पनीर'] : [ingredientKey];
+        return aliases.some(a => s.includes(a.toLowerCase()));
+      }
+      const k = ing.ingredientKey || ing.canonicalKey;
+      return k === ingredientKey;
+    });
+    if (hasKey) return true;
+  }
+  const legacy = recipe.legacyIngredients || (Array.isArray(recipe.ingredients) && typeof recipe.ingredients[0] === 'string' ? recipe.ingredients : []);
+  const aliases = ingredientKey === 'paneer' ? ['paneer', 'पनीर'] : [ingredientKey];
+  if (Array.isArray(legacy) && legacy.some(line => {
+    const s = String(line).toLowerCase();
+    return aliases.some(alias => s.includes(alias.toLowerCase()));
+  })) {
+    return true;
+  }
+  const name = String(recipe.name || '').toLowerCase();
+  const mr = String(recipe.mr || '').toLowerCase();
+  if (ingredientKey === 'paneer') {
+    if (name.includes('paneer') || mr.includes('पनीर')) return true;
+  }
+  return false;
+}
+
+function getMealDate(mealEntryId, meals = [], assignment = null) {
+  if (assignment?.date) return assignment.date;
+  const m = (meals || []).find(x => x.id === mealEntryId);
+  if (m?.date) return m.date;
+  if (typeof mealEntryId === 'string') {
+    const match = mealEntryId.match(/\b\d{4}-\d{2}(-\d{2})?\b/);
+    if (match) return match[0];
+  }
+  return null;
+}
+
+function getMealMonth(mealEntryId, meals = [], assignment = null) {
+  const date = getMealDate(mealEntryId, meals, assignment);
+  if (date) return date.slice(0, 7);
+  if (typeof mealEntryId === 'string') {
+    const match = mealEntryId.match(/\b\d{4}-\d{2}\b/);
+    if (match) return match[0];
+  }
+  return null;
+}
+
+function countIngredientMonthlyOccurrences({
+  assignments = [],
+  recipes = [],
+  meals = [],
+  ingredientKey = 'paneer',
+  month = null,
+  excludeMealEntryId = null
+} = {}) {
+  const mealEntriesWithIngredient = new Set();
+
+  for (const a of assignments || []) {
+    if (!a.recipeId) continue;
+    const mealEntryId = a.mealEntryId;
+    if (!mealEntryId) continue;
+    if (excludeMealEntryId && mealEntryId === excludeMealEntryId) continue;
+
+    if (month) {
+      const mealMonth = getMealMonth(mealEntryId, meals, a);
+      if (mealMonth && mealMonth !== month) continue;
+    }
+
+    const recipe = (recipes || []).find(r => r.id === a.recipeId || r.name === a.recipeId);
+    if (recipe && recipeContainsIngredient(recipe, ingredientKey)) {
+      mealEntriesWithIngredient.add(mealEntryId);
+    }
+  }
+
+  return mealEntriesWithIngredient.size;
+}
+
+function getHouseholdFrequencyStatus({
+  assignments = [],
+  recipes = [],
+  meals = [],
+  month = null,
+  frequencyRules = DEFAULT_FREQUENCY_RULES
+} = {}) {
+  return (frequencyRules || []).map(rule => {
+    const ingredientKey = rule.ingredientKey || 'paneer';
+    const currentOccurrences = countIngredientMonthlyOccurrences({
+      assignments,
+      recipes,
+      meals,
+      ingredientKey,
+      month
+    });
+    const maxPerCalendarMonth = Number(rule.maxPerCalendarMonth ?? 5);
+    const remaining = Math.max(0, maxPerCalendarMonth - currentOccurrences);
+    const limitReached = currentOccurrences >= maxPerCalendarMonth;
+    return {
+      ...rule,
+      month: month || new Date().toISOString().slice(0, 7),
+      currentOccurrences,
+      maxPerCalendarMonth,
+      remaining,
+      limitReached,
+      preferenceType: 'household_planning'
+    };
+  });
+}
+
 function evaluateRecipeEligibility(member, recipe, rules = DEFAULT_DIETARY_RULES) {
   const reasons = [];
   for (const rule of rules || []) {
@@ -192,18 +319,89 @@ function rankAlternateRecipes(ineligibleRecipe, member, candidateRecipes) {
   return suitable.map((recipe,index)=>({recipe,index})).sort((a,b)=>score(b.recipe)-score(a.recipe) || a.index-b.index).map(x=>x.recipe);
 }
 
-function selectAutomaticAlternate(ineligibleRecipe, member, candidateRecipes) {
-  const recipe = rankAlternateRecipes(ineligibleRecipe,member,candidateRecipes).find(r => r.id !== ineligibleRecipe.id) || null;
-  return recipe ? {recipe,reason:'Existing suitable vegetarian recipe selected by the alternate ranking rules.'} : {recipe:null,reason:'No suitable existing vegetarian alternate is available.'};
+function selectAutomaticAlternate(ineligibleRecipe, member, candidateRecipes, options = {}) {
+  const allRanked = rankAlternateRecipes(ineligibleRecipe, member, candidateRecipes).filter(r => r.id !== ineligibleRecipe.id);
+  if (!allRanked.length) {
+    return {
+      recipe: null,
+      reason: 'No suitable existing vegetarian alternate is available.'
+    };
+  }
+
+  const frequencyRules = options.frequencyRules || DEFAULT_FREQUENCY_RULES;
+  const assignments = options.assignments || [];
+  const meals = options.meals || [];
+  const mealEntry = options.mealEntry || null;
+  const targetDate = options.targetDate || mealEntry?.date || getMealDate(mealEntry?.id, meals) || null;
+  const targetMonth = options.month || (targetDate ? targetDate.slice(0, 7) : null);
+  const currentMealEntryId = mealEntry?.id || options.mealEntryId || null;
+
+  let frequencyViolationAttempted = false;
+
+  for (const candidate of allRanked) {
+    let candidateExceeds = false;
+
+    for (const rule of frequencyRules) {
+      if (rule.ruleType === 'ingredient_frequency' && rule.ingredientKey) {
+        if (recipeContainsIngredient(candidate, rule.ingredientKey)) {
+          let currentOccurrences;
+          if (typeof options.currentOccurrences === 'number') {
+            currentOccurrences = options.currentOccurrences;
+          } else {
+            currentOccurrences = countIngredientMonthlyOccurrences({
+              assignments,
+              recipes: options.recipes || candidateRecipes,
+              meals,
+              ingredientKey: rule.ingredientKey,
+              month: targetMonth,
+              excludeMealEntryId: currentMealEntryId
+            });
+          }
+
+          const limit = Number(rule.maxPerCalendarMonth ?? 5);
+          const alreadyHasInCurrentMeal = currentMealEntryId && (assignments || []).some(a =>
+            a.mealEntryId === currentMealEntryId &&
+            a.memberId !== member.id &&
+            recipeContainsIngredient((options.recipes || candidateRecipes).find(r => r.id === a.recipeId || r.name === a.recipeId), rule.ingredientKey)
+          );
+
+          const prospectiveCount = alreadyHasInCurrentMeal ? currentOccurrences : currentOccurrences + 1;
+          if (prospectiveCount > limit) {
+            candidateExceeds = true;
+            frequencyViolationAttempted = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!candidateExceeds) {
+      return {
+        recipe: candidate,
+        reason: frequencyViolationAttempted
+          ? 'Non-paneer vegetarian alternate selected to respect household monthly frequency preference.'
+          : 'Existing suitable vegetarian recipe selected by the alternate ranking rules.',
+        frequencyConstraintApplied: frequencyViolationAttempted
+      };
+    }
+  }
+
+  return {
+    recipe: null,
+    reason: frequencyViolationAttempted
+      ? 'No suitable vegetarian alternate available within household frequency preferences.'
+      : 'No suitable existing vegetarian alternate is available.',
+    frequencyConstraintViolated: frequencyViolationAttempted
+  };
 }
 
-function buildAutomaticAssignments(mealEntry, members, recipes, rules = DEFAULT_DIETARY_RULES) {
+function buildAutomaticAssignments(mealEntry, members, recipes, rules = DEFAULT_DIETARY_RULES, options = {}) {
   const primary = (recipes || []).find(r => r.id === mealEntry.recipeId || r.name === mealEntry.title);
   return (members || []).map(member => {
     const eligibility = evaluateRecipeEligibility(member,primary,rules);
     if (eligibility.eligible) return {id:`${mealEntry.id}:${member.id}`,mealEntryId:mealEntry.id,memberId:member.id,recipeId:primary?.id || null,portionFactor:1,assignmentSource:'automatic',automaticRecipeId:primary?.id || null,overrideRecipeId:null,overrideReason:null};
-    const alternate = selectAutomaticAlternate(primary,member,recipes);
-    return {id:`${mealEntry.id}:${member.id}`,mealEntryId:mealEntry.id,memberId:member.id,recipeId:alternate.recipe?.id || null,portionFactor:1,assignmentSource:'automatic',automaticRecipeId:alternate.recipe?.id || null,overrideRecipeId:null,overrideReason:alternate.reason};
+    const alternate = selectAutomaticAlternate(primary,member,recipes,{...options, mealEntry});
+    return {id:`${mealEntry.id}:${member.id}`,mealEntryId:mealEntry.id,memberId:member.id,recipeId:alternate.recipe?.id || null,portionFactor:1,assignmentSource:'automatic',automaticRecipeId:alternate.recipe?.id || null,overrideRecipeId:null,overrideReason:alternate.reason,frequencyConstraintApplied:alternate.frequencyConstraintApplied||false};
   });
 }
 
@@ -358,5 +556,5 @@ function groupMemberAssignments(assignments = [], members = [], recipes = []) {
   };
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments});
-export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments};
+if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments});
+export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments};

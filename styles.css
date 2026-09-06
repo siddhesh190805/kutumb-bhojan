@@ -607,6 +607,42 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--btn-danger-fg);
   border: 1px solid var(--border);
 }
+.frequency-tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--soft);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+.alternate-warning {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-fg);
+  border: 1px solid var(--border);
+}
+.frequency-status-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.frequency-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
 
 /* Expandable Member Override Editor */
 .member-editor-details {
