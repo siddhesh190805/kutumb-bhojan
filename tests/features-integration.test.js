@@ -25,7 +25,8 @@ import {
   mapMealAssignments,
   buildStructuredRecipe,
   mapDietaryRules,
-  getRecipeNutritionConcepts
+  getRecipeNutritionConcepts,
+  groupMemberAssignments
 } from '../sync.js';
 
 const mockCatalog = [
@@ -357,8 +358,10 @@ test('FEATURE 11: Layout responsiveness and safety prevents distortion', () => {
   assert.ok(!css.includes('height: 82px'), 'Rigid topbar height: 82px must be removed');
   assert.match(css, /\.topbar\s*\{[^}]*min-height:\s*(?:68|70)px/);
 
-  // Assignment row wraps to prevent horizontal overflow when 4 family members are listed
-  assert.match(css, /\.assignment-row\s*\{[^}]*flex-wrap:\s*wrap/);
+  // Assignment row and controls are strictly bounded to prevent horizontal dropdown overflow
+  assert.match(css, /\.assignment-row\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /\.assignment-change select\s*\{[^}]*text-overflow:\s*ellipsis/);
+  assert.match(css, /\.assignment-change select\s*\{[^}]*max-width:\s*100%/);
 
   // Form grid responsive rule exists for mobile modal forms
   assert.match(css, /@media\s*\(max-width:\s*620px\)\s*\{[^}]*\.form-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
@@ -435,5 +438,106 @@ test('FEATURE 12: Behavioral TTS execution on displayed content and fallback', a
   assert.match(appSrc, /data-tts-key/);
   assert.match(appSrc, /data-tts-mr/);
   assert.match(appSrc, /data-tts-en/);
+});
+
+test('FEATURE 13: Presentation grouping of shared meals vs member alternates', () => {
+  const recipes = [
+    { id: 'r_shared', name: 'Moong Chilla', mr: 'मूग चिल्ला' },
+    { id: 'r_egg', name: 'Egg Bhurji', mr: 'अंडा भुर्जी' },
+    { id: 'r_veg', name: 'Paneer Bhurji', mr: 'पनीर भुर्जी' }
+  ];
+
+  // Case 1: All 4 members have identical recipe -> Shared family meal
+  const sharedAssignments = [
+    { memberId: 'vikas', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'namrata', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'tejas', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'siddhesh', recipeId: 'r_shared', assignmentSource: 'automatic' }
+  ];
+  const groupedShared = groupMemberAssignments(sharedAssignments, members, recipes);
+  assert.equal(groupedShared.isShared, true);
+  assert.equal(groupedShared.hasAlternates, false);
+  assert.equal(groupedShared.groups.length, 1);
+  assert.equal(groupedShared.groups[0].members.length, 4);
+
+  // Case 2: 2 members have Egg, 2 have Veg alternate -> Shows member alternates
+  const alternateAssignments = [
+    { memberId: 'tejas', recipeId: 'r_egg', assignmentSource: 'automatic' },
+    { memberId: 'siddhesh', recipeId: 'r_egg', assignmentSource: 'automatic' },
+    { memberId: 'vikas', recipeId: 'r_veg', assignmentSource: 'automatic', automaticRecipeId: 'r_egg' },
+    { memberId: 'namrata', recipeId: 'r_veg', assignmentSource: 'automatic', automaticRecipeId: 'r_egg' }
+  ];
+  const groupedAlt = groupMemberAssignments(alternateAssignments, members, recipes);
+  assert.equal(groupedAlt.isShared, false);
+  assert.equal(groupedAlt.hasAlternates, true);
+  assert.equal(groupedAlt.groups.length, 2);
+
+  // Case 3: 1 member has manual day override
+  const overrideAssignments = [
+    { memberId: 'vikas', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'namrata', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'tejas', recipeId: 'r_shared', assignmentSource: 'automatic' },
+    { memberId: 'siddhesh', recipeId: 'r_egg', assignmentSource: 'manual', overrideRecipeId: 'r_egg' }
+  ];
+  const groupedOverride = groupMemberAssignments(overrideAssignments, members, recipes);
+  assert.equal(groupedOverride.hasAlternates, true);
+  const overrideGroup = groupedOverride.groups.find(g => g.hasOverride);
+  assert.ok(overrideGroup);
+  assert.equal(overrideGroup.members[0].id, 'siddhesh');
+});
+
+test('FEATURE 14: Shopping derivation portion scaling with 4 members', () => {
+  const r1 = buildStructuredRecipe({
+    id: 'r_chilla',
+    name: 'Moong Chilla',
+    ingredients: ['100 g moong dal', '10 ml oil']
+  }, [], mockCatalog);
+  const r2 = buildStructuredRecipe({
+    id: 'r_bhurji',
+    name: 'Egg Bhurji',
+    ingredients: ['2 piece egg', '10 ml oil']
+  }, [], mockCatalog);
+
+  // 4 members eating 1 shared recipe -> 4 portions (400g moong dal, 40ml oil)
+  const shared = [
+    { memberId: 'vikas', recipeId: 'r_chilla', portionFactor: 1 },
+    { memberId: 'namrata', recipeId: 'r_chilla', portionFactor: 1 },
+    { memberId: 'tejas', recipeId: 'r_chilla', portionFactor: 1 },
+    { memberId: 'siddhesh', recipeId: 'r_chilla', portionFactor: 1 }
+  ];
+  const shopShared = buildShoppingFromAssignments(shared, [r1, r2], [], mockCatalog);
+  const moong = shopShared.find(x => x.canonicalKey === 'moong_dal');
+  const oil = shopShared.find(x => x.canonicalKey === 'oil');
+  assert.equal(moong.quantity, 400);
+  assert.equal(oil.quantity, 40);
+
+  // 2 members eating chilla, 2 members eating egg -> (200g moong, 4 eggs, 40ml oil)
+  const split = [
+    { memberId: 'vikas', recipeId: 'r_chilla', portionFactor: 1 },
+    { memberId: 'namrata', recipeId: 'r_chilla', portionFactor: 1 },
+    { memberId: 'tejas', recipeId: 'r_bhurji', portionFactor: 1 },
+    { memberId: 'siddhesh', recipeId: 'r_bhurji', portionFactor: 1 }
+  ];
+  const shopSplit = buildShoppingFromAssignments(split, [r1, r2], [], mockCatalog);
+  assert.equal(shopSplit.find(x => x.canonicalKey === 'moong_dal').quantity, 200);
+  assert.equal(shopSplit.find(x => x.canonicalKey === 'egg').quantity, 4);
+  assert.equal(shopSplit.find(x => x.canonicalKey === 'oil').quantity, 40);
+});
+
+test('FEATURE 15: Dark theme contrast and token safety', () => {
+  const css = fs.readFileSync(path.join(process.cwd(), 'styles.css'), 'utf8');
+
+  // Verify topbar switchers use glassmorphic styling, not stark opaque white box
+  assert.match(css, /\.global-language,\s*\.global-theme\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,/);
+
+  // Verify selects and options have theme-aware background
+  assert.match(css, /select,\s*option\s*\{[^}]*background:\s*var\(--surface\)/);
+
+  // Verify app.js renders family meal badge and member change details
+  const appSrc = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf8');
+  assert.match(appSrc, /family-meal-badge/);
+  assert.match(appSrc, /member-editor-details/);
+  assert.match(appSrc, /Change for this day/);
+  assert.match(appSrc, /Revert to automatic/);
 });
 

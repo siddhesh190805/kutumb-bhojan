@@ -318,5 +318,45 @@ function buildStructuredRecipe(recipe, recipeIngredients, ingredientCatalog) {
   return {...recipe,legacyIngredients:legacy,ingredients:structured,legacyUnmapped:mapped.length ? [] : fallback.legacyUnmapped,mealCategory:recipe.mealCategory||recipe.course,mealRole,dishFunction,dietaryFlags,nutrition};
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules});
-export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules};
+function groupMemberAssignments(assignments = [], members = [], recipes = []) {
+  if (!assignments || !assignments.length) {
+    return { isShared: true, sharedRecipe: null, groups: [], hasAlternates: false };
+  }
+  const groupMap = new Map();
+  for (const a of assignments) {
+    const recipeId = a.recipeId;
+    const member = (members || []).find(m => m.id === a.memberId) || { id: a.memberId, name: a.memberId, mr: a.memberId };
+    const recipe = (recipes || []).find(r => r.id === recipeId) || { id: recipeId, name: recipeId, mr: recipeId };
+    if (!groupMap.has(recipeId)) {
+      groupMap.set(recipeId, {
+        recipeId,
+        recipe,
+        members: [],
+        memberIds: [],
+        hasOverride: false,
+        hasAutoAlternate: false
+      });
+    }
+    const grp = groupMap.get(recipeId);
+    grp.members.push(member);
+    grp.memberIds.push(member.id);
+    if (a.assignmentSource === 'manual') grp.hasOverride = true;
+    if (a.assignmentSource === 'automatic' && a.automaticRecipeId && a.recipeId !== a.automaticRecipeId) {
+      grp.hasAutoAlternate = true;
+    }
+  }
+  const groups = Array.from(groupMap.values());
+  const isShared = groups.length === 1;
+  const sharedRecipe = isShared ? groups[0].recipe : null;
+  const hasAlternates = groups.length > 1 || groups.some(g => g.hasOverride || g.hasAutoAlternate);
+
+  return {
+    isShared,
+    sharedRecipe,
+    groups,
+    hasAlternates
+  };
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments});
+export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments};

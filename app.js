@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES } from './sync.js';
+import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments } from './sync.js';
 import { tts } from './tts.js';
 
 const SUPABASE_URL='https://wcwwvyreefkrqchfteqp.supabase.co';
@@ -381,7 +381,57 @@ function assignmentOptions(meal,member,assignment){
 function mealAssignmentsView(meal){
  const assignments=assignmentsForMeal(meal);
  if(!assignments.length)return '';
- return `<div class="meal-assignments"><div class="assignment-title">👨‍👩‍👦 ${t('प्रत्येक सदस्यासाठी','Per member')}</div>${state.members.map(member=>{const a=assignments.find(x=>x.memberId===member.id);const recipe=state.recipes.find(r=>r.id===a?.recipeId);const automatic=state.recipes.find(r=>r.id===a?.automaticRecipeId);return `<div class="assignment-row ${a?.assignmentSource==='manual'?'overridden':''}"><div class="assignment-member"><b>${esc(t(member.mr,member.name))}</b><small>${esc(member.name)}</small></div><div class="assignment-recipe"><strong>${recipe?esc(t(recipe.mr,recipe.name)):t('⚠️ योग्य पर्याय नाही','⚠️ No suitable alternate')}</strong><small>${recipe?esc(recipe.name):esc(a?.overrideReason||'No suitable existing vegetarian alternate')}</small></div><label class="assignment-change"><span>${t('आजचा बदल','Change for this day')}</span><select data-change-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">${assignmentOptions(meal,member,a)}</select></label>${a?.assignmentSource==='manual'?`<button class="secondary tiny" data-revert-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">${t('मूळ निवडीवर परत या','Revert to automatic')}</button>`:''}${automatic&&a?.assignmentSource==='automatic'&&a?.recipeId!==automatic.id?`<span class="alternate-note">${t('ऑटो पर्याय','Auto alternate')}</span>`:''}</div>`}).join('')}</div>`;
+ const grouped=groupMemberAssignments(assignments, state.members, state.recipes);
+
+ const familySummary = !grouped.hasAlternates
+   ? `<div class="family-meal-badge">
+        <span>👨‍👩‍👦 ${t('कुटुंब','Family')}</span>
+        <small>${state.members.length} ${t('सदस्य · संपूर्ण कुटुंब एकच जेवण','members · shared meal')}</small>
+      </div>`
+   : `<div class="member-alternates-box">
+        <div class="alternates-title">👨‍👩‍👦 ${t('सदस्य बदल','Member changes')}</div>
+        ${grouped.groups.map(g=>{
+          const memberList = g.members.map(m=>esc(t(m.mr,m.name))).join(', ');
+          const recName = g.recipe ? esc(t(g.recipe.mr,g.recipe.name)) : t('पर्याय','Alternate');
+          const tag = g.hasOverride
+            ? `<span class="override-tag">${t('बदल','Override')}</span>`
+            : g.hasAutoAlternate
+              ? `<span class="alternate-note">${t('ऑटो पर्याय','Auto alternate')}</span>`
+              : '';
+          return `<div class="alternate-row"><b>${memberList}:</b> <span>${recName}</span> ${tag}</div>`;
+        }).join('')}
+      </div>`;
+
+ return `<div class="meal-assignments">
+   ${familySummary}
+   <details class="member-editor-details">
+     <summary class="member-editor-summary">
+       <span>⚙️ ${t('सदस्यांचे जेवण बदला','Change for this day')}</span>
+     </summary>
+     <div class="member-editor-rows">
+       ${state.members.map(member=>{
+         const a=assignments.find(x=>x.memberId===member.id);
+         const recipe=state.recipes.find(r=>r.id===a?.recipeId);
+         const isOverridden = a?.assignmentSource==='manual';
+         return `<div class="assignment-row ${isOverridden?'overridden':''}">
+           <div class="assignment-member">
+             <b>${esc(t(member.mr,member.name))}</b>
+             <small>${recipe?esc(t(recipe.mr,recipe.name)):''}</small>
+           </div>
+           <div class="assignment-controls">
+             <label class="assignment-change">
+               <span class="sr-only">${t('आजचा बदल','Change for this day')}</span>
+               <select data-change-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">
+                 ${assignmentOptions(meal,member,a)}
+               </select>
+             </label>
+             ${isOverridden?`<button type="button" class="secondary tiny" data-revert-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">${t('मूळ निवडीवर परत या','Revert to automatic')}</button>`:''}
+           </div>
+         </div>`;
+       }).join('')}
+     </div>
+   </details>
+ </div>`;
 }
 
 function mealCard(m){
