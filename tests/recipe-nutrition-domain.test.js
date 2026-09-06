@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  parseLegacyIngredientLine,
   normalizeIngredientAlias, normalizeUnit, convertQuantity, aggregateIngredientLines,
   mapLegacyRecipeIngredients, deriveRecipeDietaryFlags, evaluateRecipeEligibility,
   DEFAULT_DIETARY_RULES, rankAlternateRecipes, selectAutomaticAlternate,
   buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride,
-  mapNutritionEducation, getRecipeNutritionConcepts, evaluateMealBalance, buildShoppingFromAssignments
+  mapNutritionEducation, getRecipeNutritionConcepts, evaluateMealBalance, buildShoppingFromAssignments,
+  buildStructuredRecipe
 } from '../sync.js';
 
 const catalog = [
@@ -54,6 +56,92 @@ test('maps known recipe ingredient aliases and preserves unmapped legacy lines',
   const unknown = mapLegacyRecipeIngredients({ingredients:['1 handful unknown greens']}, catalog);
   assert.equal(unknown.structured.length,0);
   assert.deepEqual(unknown.legacyUnmapped,['1 handful unknown greens']);
+});
+
+test('GAP-002: parses count-based/unitless and explicit unit ingredient lines correctly', () => {
+  // Count-based / unitless
+  assert.deepEqual(parseLegacyIngredientLine('8 eggs'), { quantity: 8, unit: 'piece', label: 'eggs' });
+  assert.deepEqual(parseLegacyIngredientLine('4 bananas'), { quantity: 4, unit: 'piece', label: 'bananas' });
+  assert.deepEqual(parseLegacyIngredientLine('2 cucumbers'), { quantity: 2, unit: 'piece', label: 'cucumbers' });
+  assert.deepEqual(parseLegacyIngredientLine('1 apple'), { quantity: 1, unit: 'piece', label: 'apple' });
+  assert.deepEqual(parseLegacyIngredientLine('8 rotis'), { quantity: 8, unit: 'piece', label: 'rotis' });
+
+  // Explicit units preserved
+  assert.deepEqual(parseLegacyIngredientLine('100 g dal'), { quantity: 100, unit: 'g', label: 'dal' });
+  assert.deepEqual(parseLegacyIngredientLine('1 kg rice'), { quantity: 1, unit: 'kg', label: 'rice' });
+  assert.deepEqual(parseLegacyIngredientLine('500 ml milk'), { quantity: 500, unit: 'ml', label: 'milk' });
+  assert.deepEqual(parseLegacyIngredientLine('2 L water'), { quantity: 2, unit: 'L', label: 'water' });
+  assert.deepEqual(parseLegacyIngredientLine('2 tsp oil'), { quantity: 2, unit: 'tsp', label: 'oil' });
+  assert.deepEqual(parseLegacyIngredientLine('1 tbsp oil'), { quantity: 1, unit: 'tbsp', label: 'oil' });
+  assert.deepEqual(parseLegacyIngredientLine('1 cup curd'), { quantity: 1, unit: 'cup', label: 'curd' });
+  assert.deepEqual(parseLegacyIngredientLine('8 piece eggs'), { quantity: 8, unit: 'piece', label: 'eggs' });
+});
+
+test('GAP-002: builds egg recipe end-to-end from real ingredient lines without manual dietaryFlags injection', () => {
+  const eggRecipeRaw = {
+    id: 'egg-bhurji-roti',
+    name: 'Egg Bhurji + Roti',
+    mr: 'अंडा भुर्जी + पोळी',
+    course: 'Breakfast/Dinner',
+    time: '15 min',
+    ingredients: ['8 eggs', '200 g onion-tomato', '8 rotis', '8 ml oil'],
+    method: ['Whisk eggs.', 'Cook masala.', 'Scramble eggs fully.', 'Serve with rotis.'],
+    note: 'Egg-free alternative: paneer bhurji.'
+  };
+
+  const structuredEggRecipe = buildStructuredRecipe(eggRecipeRaw, [], []);
+  
+  // Verify egg is parsed into structured ingredients as piece
+  const eggIng = structuredEggRecipe.ingredients.find(i => i.ingredientKey === 'egg');
+  assert.ok(eggIng, 'Egg must be recognized in structured ingredients');
+  assert.equal(eggIng.quantity, 8);
+  assert.equal(eggIng.unit, 'piece');
+
+  // Verify derived dietary flags
+  assert.equal(structuredEggRecipe.dietaryFlags.containsEgg, true, 'containsEgg must be true');
+  assert.equal(structuredEggRecipe.dietaryFlags.vegetarian, false, 'vegetarian must be false for egg recipe');
+
+  // Verify member eligibility on this parsed recipe
+  assert.equal(evaluateRecipeEligibility({ id: 'siddhesh', name: 'Siddhesh' }, structuredEggRecipe, DEFAULT_DIETARY_RULES).eligible, true);
+  assert.equal(evaluateRecipeEligibility({ id: 'tejas', name: 'Tejas' }, structuredEggRecipe, DEFAULT_DIETARY_RULES).eligible, true);
+  assert.equal(evaluateRecipeEligibility({ id: 'vikas', name: 'Vikas' }, structuredEggRecipe, DEFAULT_DIETARY_RULES).eligible, false);
+  assert.equal(evaluateRecipeEligibility({ id: 'namrata', name: 'Namrata' }, structuredEggRecipe, DEFAULT_DIETARY_RULES).eligible, false);
+
+  // Verify automatic assignments with vegetarian alternate
+  const vegAlternateRaw = {
+    id: 'paneer-bhurji-roti',
+    name: 'Paneer Bhurji + Roti',
+    mr: 'पनीर भुर्जी + पोळी',
+    course: 'Breakfast',
+    time: '20 min',
+    ingredients: ['400 g paneer', '200 g tomato-onion', '8 rotis', '10 ml oil'],
+    method: ['Cook onion-tomato.', 'Add crumbled paneer.', 'Serve with rotis.']
+  };
+  const structuredVegAlternate = buildStructuredRecipe(vegAlternateRaw, [], []);
+  assert.equal(structuredVegAlternate.dietaryFlags.vegetarian, true);
+
+  const testMembers = [
+    { id: 'siddhesh', name: 'Siddhesh' },
+    { id: 'tejas', name: 'Tejas' },
+    { id: 'vikas', name: 'Vikas' },
+    { id: 'namrata', name: 'Namrata' }
+  ];
+  const meal = { id: '2026-09-07-Breakfast', date: '2026-09-07', slot: 'Breakfast', recipeId: structuredEggRecipe.id };
+  const assignments = buildAutomaticAssignments(meal, testMembers, [structuredEggRecipe, structuredVegAlternate], DEFAULT_DIETARY_RULES);
+
+  assert.equal(recipeFor(assignments, 'siddhesh'), structuredEggRecipe.id);
+  assert.equal(recipeFor(assignments, 'tejas'), structuredEggRecipe.id);
+  assert.equal(recipeFor(assignments, 'vikas'), structuredVegAlternate.id);
+  assert.equal(recipeFor(assignments, 'namrata'), structuredVegAlternate.id);
+
+  // If no vegetarian alternate exists, NEVER silently assign egg to Vikas or Namrata
+  const assignmentsNoAlternate = buildAutomaticAssignments(meal, testMembers, [structuredEggRecipe], DEFAULT_DIETARY_RULES);
+  assert.equal(recipeFor(assignmentsNoAlternate, 'siddhesh'), structuredEggRecipe.id);
+  assert.equal(recipeFor(assignmentsNoAlternate, 'tejas'), structuredEggRecipe.id);
+  assert.equal(recipeFor(assignmentsNoAlternate, 'vikas'), null);
+  assert.equal(recipeFor(assignmentsNoAlternate, 'namrata'), null);
+  const vikasAssignment = assignmentsNoAlternate.find(a => a.memberId === 'vikas');
+  assert.match(vikasAssignment.overrideReason, /no suitable/i);
 });
 
 test('derives egg presence from canonical ingredient identity', () => {

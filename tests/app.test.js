@@ -95,3 +95,55 @@ test('settings has exactly one language preference panel',()=>{
   const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
   assert.equal((source.match(/<h3>🌐 Language \/ भाषा<\/h3>/g)||[]).length,1);
 });
+
+test('GAP-003: saveHouseholdSettings is defined, validated, and handles local and remote persistence',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
+  
+  // Verify function definition exists
+  assert.match(source,/async function saveHouseholdSettings\(\)\s*\{/, 'saveHouseholdSettings function must be defined');
+  
+  // Verify validation logic exists
+  assert.match(source,/householdSize=Math\.min\(20,\s*Math\.max\(1/);
+  assert.match(source,/oilStockMl=Math\.max\(0/);
+  assert.match(source,/oilMonthlyTargetMl=Math\.max\(100/);
+
+  // Verify persistence targets household_settings table with household_id conflict key
+  assert.match(source,/supabase\.from\('household_settings'\)\.upsert\(payload,\s*\{\s*onConflict:\s*'household_id'\s*\}\)/);
+
+  // Verify local storage update
+  assert.match(source,/localStorage\.setItem\(STORAGE,\s*JSON\.stringify\(state\)\)/);
+
+  // Verify graceful error handling
+  assert.match(source,/console\.warn\('saveHouseholdSettings failed'/);
+});
+
+test('GAP-004: PWA root assets exist, vercel.json defines root rewrites, and service worker is root-scoped',()=>{
+  const fs=require('node:fs');
+  const root=require('node:path').join(__dirname,'..');
+
+  // Verify root files exist
+  assert.ok(fs.existsSync(require('node:path').join(root,'manifest.webmanifest')), 'root manifest.webmanifest must exist');
+  assert.ok(fs.existsSync(require('node:path').join(root,'service-worker.js')), 'root service-worker.js must exist');
+  assert.ok(fs.existsSync(require('node:path').join(root,'icon.svg')), 'root icon.svg must exist');
+
+  // Verify vercel.json rewrites
+  const vercelConfig=JSON.parse(fs.readFileSync(require('node:path').join(root,'vercel.json'),'utf8'));
+  assert.ok(Array.isArray(vercelConfig.rewrites), 'vercel.json must have rewrites');
+  const rewriteSources=vercelConfig.rewrites.map(r=>r.source);
+  assert.ok(rewriteSources.includes('/manifest.webmanifest'), 'rewrites must include /manifest.webmanifest');
+  assert.ok(rewriteSources.includes('/service-worker.js'), 'rewrites must include /service-worker.js');
+  assert.ok(rewriteSources.includes('/icon.svg'), 'rewrites must include /icon.svg');
+
+  // Verify manifest configuration
+  const manifest=JSON.parse(fs.readFileSync(require('node:path').join(root,'manifest.webmanifest'),'utf8'));
+  assert.equal(manifest.start_url, '/');
+  assert.equal(manifest.scope, '/');
+  assert.equal(manifest.icons[0].src, '/icon.svg');
+
+  // Verify service worker scope & shell assets
+  const sw=fs.readFileSync(require('node:path').join(root,'service-worker.js'),'utf8');
+  assert.match(sw, /'\/manifest\.webmanifest'/);
+  assert.match(sw, /'\/icon\.svg'/);
+});
+

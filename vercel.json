@@ -1,1 +1,29 @@
-{"cleanUrls":true,"headers":[{"source":"/app.js","headers":[{"key":"Cache-Control","value":"public, max-age=3600"}]},{"source":"/styles.css","headers":[{"key":"Cache-Control","value":"public, max-age=3600"}]}]}
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/manifest.webmanifest", "destination": "/manifest.webmanifest" },
+    { "source": "/service-worker.js", "destination": "/service-worker.js" },
+    { "source": "/icon.svg", "destination": "/icon.svg" }
+  ],
+  "headers": [
+    {
+      "source": "/app.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/styles.css",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/service-worker.js",
+      "headers": [
+        { "key": "Service-Worker-Allowed", "value": "/" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    }
+  ]
+}

@@ -80,10 +80,21 @@ function normalizeUnit(value) {
 function normalizeIngredientAlias(value, aliases) {
   const needle = String(value ?? '').trim().toLocaleLowerCase();
   if (!needle) return null;
+  const singular = needle.endsWith('es') ? needle.slice(0, -2) : needle.endsWith('s') ? needle.slice(0, -1) : null;
   for (const entry of aliases || []) {
     const key = entry.canonicalKey ?? entry.canonical_key ?? entry.ingredientKey ?? entry.ingredient_key;
     const names = [key, ...(entry.aliases || entry.aliases_json || [])].filter(Boolean);
-    if (names.some(name => { const alias=String(name).trim().toLocaleLowerCase(); return alias===needle || needle.startsWith(`${alias},`) || needle.startsWith(`${alias} `); })) return key;
+    if (names.some(name => {
+      const alias = String(name).trim().toLocaleLowerCase();
+      const aliasSingular = alias.endsWith('es') ? alias.slice(0, -2) : alias.endsWith('s') ? alias.slice(0, -1) : null;
+      return alias === needle ||
+        (singular && alias === singular) ||
+        (aliasSingular && aliasSingular === needle) ||
+        (singular && aliasSingular && aliasSingular === singular) ||
+        needle.startsWith(`${alias},`) ||
+        needle.startsWith(`${alias} `) ||
+        (singular && (needle.startsWith(`${alias}s`) || needle.startsWith(`${alias}es`)));
+    })) return key;
   }
   return null;
 }
@@ -117,11 +128,19 @@ function aggregateIngredientLines(lines) {
 
 function parseLegacyIngredientLine(line) {
   const raw = String(line ?? '').trim();
-  const match = raw.match(/^\s*(\d+(?:\.\d+)?)\s*(kg|g|ml|L|piece|pieces|count|tsp|tbsp|cup|cups)\s+(.+?)\s*$/i);
-  if (!match) return null;
-  const quantity = Number(match[1]);
-  const unit = normalizeUnit(match[2]);
-  return unit ? { quantity, unit, label: match[3].trim() } : null;
+  if (!raw) return null;
+  const explicitMatch = raw.match(/^\s*(\d+(?:\.\d+)?)\s*(kg|g|ml|L|piece|pieces|count|pcs|gram|grams|kilogram|kilograms|millilitre|millilitres|milliliter|milliliters|litre|litres|liter|liters|teaspoon|teaspoons|tsp|tablespoon|tablespoons|tbsp|cup|cups)\s+(.+?)\s*$/i);
+  if (explicitMatch) {
+    const quantity = Number(explicitMatch[1]);
+    const unit = normalizeUnit(explicitMatch[2]);
+    if (unit) return { quantity, unit, label: explicitMatch[3].trim() };
+  }
+  const countMatch = raw.match(/^\s*(\d+(?:\.\d+)?)\s+(.+?)\s*$/);
+  if (countMatch) {
+    const quantity = Number(countMatch[1]);
+    return { quantity, unit: 'piece', label: countMatch[2].trim() };
+  }
+  return null;
 }
 
 function mapLegacyRecipeIngredients(recipe, catalog) {
@@ -273,9 +292,9 @@ function buildStructuredRecipe(recipe, recipeIngredients, ingredientCatalog) {
     {canonicalKey:'rajma',aliases:['rajma','राजमा']},{canonicalKey:'matki',aliases:['matki','मटकी']},{canonicalKey:'lobia',aliases:['lobia','चवळी']},
     {canonicalKey:'soy_granules',aliases:['soy granules','soy','सोया ग्रॅन्युल्स']},{canonicalKey:'onion',aliases:['onion','onions','कांदा','कांदे']},
     {canonicalKey:'tomato',aliases:['tomato','tomatoes','टोमॅटो']},{canonicalKey:'cabbage',aliases:['cabbage','कोबी']},{canonicalKey:'carrot',aliases:['carrot','carrots','गाजर']},
-    {canonicalKey:'spinach',aliases:['spinach','palak','पालक']},{canonicalKey:'cucumber',aliases:['cucumber','काकडी']},{canonicalKey:'bhindi',aliases:['bhindi','okra','भेंडी']},
-    {canonicalKey:'bottle_gourd',aliases:['dudhi','bottle gourd','दुधी भोपळा']},{canonicalKey:'brinjal',aliases:['brinjal','vangi','वांगी']},{canonicalKey:'cauliflower',aliases:['cauliflower','फुलकोबी']},
-    {canonicalKey:'whole_wheat_flour',aliases:['whole-wheat flour','atta','whole wheat flour','गव्हाचे पीठ']},{canonicalKey:'jowar_flour',aliases:['jowar flour','jowar','ज्वारीचे पीठ']},
+    {canonicalKey:'spinach',aliases:['spinach','palak','पालक']},{canonicalKey:'cucumber',aliases:['cucumber','cucumbers','काकडी']},{canonicalKey:'bhindi',aliases:['bhindi','okra','भेंडी']},
+    {canonicalKey:'bottle_gourd',aliases:['dudhi','bottle gourd','दुधी भोपळा']},{canonicalKey:'brinjal',aliases:['brinjal','brinjals','vangi','वांगी']},{canonicalKey:'cauliflower',aliases:['cauliflower','फुलकोबी']},
+    {canonicalKey:'whole_wheat_flour',aliases:['whole-wheat flour','atta','whole wheat flour','गव्हाचे पीठ','roti','rotis','whole-wheat roti','whole-wheat rotis','wheat roti','पोळी','पोळ्या']},{canonicalKey:'jowar_flour',aliases:['jowar flour','jowar','ज्वारीचे पीठ']},
     {canonicalKey:'rice',aliases:['rice','तांदूळ']},{canonicalKey:'poha',aliases:['poha','flattened rice','पोहे']},{canonicalKey:'besan',aliases:['besan','gram flour','बेसन']},
     {canonicalKey:'peanuts',aliases:['peanuts','peanut','शेंगदाणे']},{canonicalKey:'banana',aliases:['banana','bananas','केळी']},{canonicalKey:'guava',aliases:['guava','पेरू']},
     {canonicalKey:'papaya',aliases:['papaya','पपई']},{canonicalKey:'pomegranate',aliases:['pomegranate','डाळिंब']},{canonicalKey:'mosambi',aliases:['mosambi','sweet lime','मोसंबी']},
@@ -299,5 +318,5 @@ function buildStructuredRecipe(recipe, recipeIngredients, ingredientCatalog) {
   return {...recipe,legacyIngredients:legacy,ingredients:structured,legacyUnmapped:mapped.length ? [] : fallback.legacyUnmapped,mealCategory:recipe.mealCategory||recipe.course,mealRole,dishFunction,dietaryFlags,nutrition};
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules});
-export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules};
+if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules});
+export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules};

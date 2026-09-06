@@ -159,6 +159,26 @@ async function save(){
  if(remoteReady&&!cloudApplyingRemote){await syncLocalChanges();await syncPhase2();}
  toast('जतन झाले · Saved');
 }
+async function saveHouseholdSettings(){
+ const current=state.householdSettings||starter.householdSettings||{};
+ const householdSize=Math.min(20,Math.max(1,Number(current.householdSize)||4));
+ const oilStockMl=Math.max(0,Number(current.oilStockMl)||0);
+ const oilMonthlyTargetMl=Math.max(100,Number(current.oilMonthlyTargetMl)||3000);
+ const displayName=current.displayName||'कुटुंब भोजन';
+ state.householdSettings={...current,householdSize,oilStockMl,oilMonthlyTargetMl,displayName};
+ localStorage.setItem(STORAGE,JSON.stringify(state));
+ if(!remoteReady||!remoteHouseholdId)return true;
+ try{
+  const payload={household_id:remoteHouseholdId,display_name:displayName,household_size:householdSize,oil_stock_ml:oilStockMl,oil_monthly_target_ml:oilMonthlyTargetMl,updated_at:new Date().toISOString()};
+  const {error}=await supabase.from('household_settings').upsert(payload,{onConflict:'household_id'});
+  if(error)throw error;
+  return true;
+ }catch(err){
+  console.warn('saveHouseholdSettings failed',err);
+  toast('Cloud sync failed / सेटिंग्ज क्लाउडमध्ये जतन होऊ शकली नाही');
+  return false;
+ }
+}
 async function syncLocalChanges(){
  if(!remoteHouseholdId)return;
  const rows=buildRemoteRows(state,remoteHouseholdId);
