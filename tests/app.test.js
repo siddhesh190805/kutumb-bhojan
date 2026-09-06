@@ -59,6 +59,39 @@ test('theme and PWA shell are wired',()=>{
   assert.match(app,/kutumb-bhojan-theme-v1/);
   assert.match(app,/serviceWorker\.register\('\/service-worker\.js'\)/);
   assert.match(index,/color-scheme/);
-  assert.match(sw,/CACHE = 'kutumb-bhojan-shell-v4'/);
+  assert.match(sw,/CACHE = 'kutumb-bhojan-shell-v5'/);
   assert.match(manifest,/"display":"standalone"/);
+});
+
+test('global controls expose a persistent language switcher with Marathi, English, and bilingual modes',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
+  assert.match(source,/LANGUAGE_STORAGE/);
+  assert.match(source,/\['mr','मराठी'\]/);
+  assert.match(source,/\['en','English'\]/);
+  assert.match(source,/\['both','दोन्ही'\]/);
+  assert.match(source,/setLanguage\(/);
+});
+
+test('today experience contains food-to-nutrition learning entry points and balance indicators',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
+  assert.match(source,/What are we eating/);
+  assert.match(source,/What are we eating today/);
+  assert.match(source,/आजच्या ताटात/);
+  assert.match(source,/Learn about nutrition/);
+  assert.match(source,/Meal balance/);
+});
+
+test('settings exposes language preference alongside theme preference',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
+  assert.match(source,/Language \/ भाषा/);
+  assert.match(source,/data-language/);
+});
+
+test('settings has exactly one language preference panel',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
+  assert.equal((source.match(/<h3>🌐 Language \/ भाषा<\/h3>/g)||[]).length,1);
 });
