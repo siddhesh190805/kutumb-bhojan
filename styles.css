@@ -29,3 +29,41 @@ body{background:var(--cream);color:var(--text)}.sidebar,.mobile-nav{background:v
 /* Nutrition learning classroom */
 .food-learning{margin:18px 0;padding:20px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(135deg,var(--surface2),var(--paper));box-shadow:var(--shadow)}.food-learning-head h3{margin:5px 0;font-size:22px;color:var(--ink)}.food-learning-head p{margin:0;color:var(--muted);line-height:1.55}.food-chip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin-top:16px}.food-chip{display:grid;gap:3px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:var(--paper)}.food-chip b{color:var(--ink);font-size:14px}.food-chip small{color:var(--muted);font-size:11px;line-height:1.35}.meal-nutrition-pills,.recipe-learning{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.meal-nutrition-pills span,.recipe-learning span{padding:5px 8px;border-radius:999px;background:var(--soft);color:var(--ink2);font-size:10px;font-weight:800}.nutrition-learning{margin-top:26px}.nutrition-section-head{margin-bottom:14px}.nutrition-class-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:15px}.nutrition-class-card{padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--paper);box-shadow:var(--shadow)}.nutrition-class-head{display:flex;gap:12px}.nutrition-class-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:var(--surface2);font-size:22px;float:left;margin:0 10px 10px 0}.nutrition-class-card h3{margin:6px 0 2px;color:var(--ink);font-size:21px}.nutrition-class-card .nutrition-class-head p{margin:0;color:var(--muted);font-size:12px}.nutrition-facts{clear:both;display:grid;gap:10px;margin-top:15px}.nutrition-facts section{padding:11px 12px;border-radius:12px;background:var(--surface2);border:1px solid var(--line)}.nutrition-facts b{font-size:12px;color:var(--ink)}.nutrition-facts p{margin:5px 0 2px;line-height:1.5;font-size:13px}.nutrition-facts small{color:var(--muted);line-height:1.45}.nutrition-facts .food-sources{border-style:dashed}.nutrition-class-card[data-nutrition-concept]{scroll-margin-top:90px}
 @media(max-width:600px){.food-learning{padding:16px}.nutrition-class-grid{grid-template-columns:1fr}.nutrition-class-card{padding:15px}.food-chip-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Lightweight native TTS feature */
+.tts-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:var(--surface2);color:var(--ink);font-size:13px;font-weight:800;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .1s ease,box-shadow .15s ease;user-select:none;-webkit-tap-highlight-color:transparent}
+.tts-btn:hover{background:#e3e0d8;border-color:var(--ink2)}
+:root[data-theme="dark"] .tts-btn{background:var(--surface2);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .tts-btn:hover{background:#2e3b35}
+.tts-btn:focus-visible{outline:3px solid #8db7a1;outline-offset:2px}
+.tts-btn:active{transform:scale(.98)}
+.tts-btn.active{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 0 0 3px rgba(23,59,45,.2);animation:tts-pulse 1.8s infinite ease-in-out}
+:root[data-theme="dark"] .tts-btn.active{background:var(--accent);color:#101614;border-color:var(--accent);box-shadow:0 0 0 3px rgba(191,229,205,.25)}
+@keyframes tts-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+.tts-btn .tts-label{white-space:nowrap}
+.today-learning-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nutrition-class-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.nutrition-tts-btn{flex-shrink:0;font-size:12px;padding:6px 12px;min-height:44px}
+.recipe-tts-wrap{margin-top:12px}
+.recipe-tts-btn{font-size:13px}
+@media(max-width:600px){.today-learning-actions{margin-top:14px;width:100%}.today-learning-actions .tts-btn,.today-learning-actions .secondary{width:100%}.nutrition-class-head{flex-wrap:wrap}.nutrition-tts-btn{margin-top:6px;width:100%}}
+
+/* Feature enhancements: Add/Edit Recipe Modal, Add Bars, Deletion */
+.modal-overlay{position:fixed;inset:0;background:rgba(16,22,20,.65);backdrop-filter:blur(3px);display:grid;place-items:center;padding:16px;z-index:100;overflow-y:auto}
+.modal-card{width:min(100%,680px);background:var(--paper);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:clamp(20px,4vw,32px);max-height:92vh;overflow-y:auto}
+.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+.modal-head h3{margin:0;color:var(--ink);font-size:22px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid .full-width{grid-column:1/-1}
+.form-grid label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:4px}
+.form-grid input,.form-grid select,.form-grid textarea{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);padding:9px 12px;font:inherit}
+.form-grid textarea{resize:vertical;min-height:75px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid var(--line)}
+.add-bar{display:flex;gap:10px;margin-bottom:18px;align-items:center;flex-wrap:wrap;background:var(--paper);border:1px solid var(--line);padding:12px 16px;border-radius:16px}
+.add-bar input,.add-bar select{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);flex:1;min-width:140px}
+.btn-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:6px;font-size:16px;border-radius:8px;transition:color .15s}
+.btn-delete:hover{color:var(--red)}
+.detail-actions{display:flex;gap:10px;align-items:center;margin-top:14px}
+.slot-reschedule{margin-top:10px;display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted)}
+.slot-reschedule select{padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--text);font-size:12px;max-width:100%}
+

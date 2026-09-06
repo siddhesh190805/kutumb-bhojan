@@ -1,5 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES } from './sync.js';
+import { tts } from './tts.js';
+
 const SUPABASE_URL='https://wcwwvyreefkrqchfteqp.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_taMU0Pog_yTgPzuJ5v7MRA_ACsZ-w3r';
 const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
@@ -95,7 +97,7 @@ const calendarRecipeData=[
 ['Egg bhurji + roti','अंडा भुर्जी + पोळी','Breakfast/Dinner','20 min','8 ml','~19 g','~4 g','~390 kcal',['8 eggs','8 whole-wheat rotis','200 g onion-tomato','100 g spinach','8 ml oil','turmeric, cumin, coriander, salt'],['Whisk eggs.','Cook onion-tomato and spinach with spices.','Add eggs and scramble until fully cooked.','Serve with rotis.'],'Cook eggs fully; egg-free option can be paneer bhurji.'],
 ['Mixed bean curry + roti + dudhi','मिश्र कडधान्य भाजी + पोळी + दुधी','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~500 kcal',['280 g mixed beans, soaked','8 whole-wheat rotis','500 g dudhi','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked mixed beans until tender.','Cook tomato-onion masala and simmer beans.','Cook chopped dudhi until soft.','Serve with rotis.'],'Use a mix such as chana, lobia and whole moong; cook thoroughly.'],
 ['Paneer chaat + pomegranate','पनीर चाट + डाळिंब','Snack','10 min','0 ml','~15 g','~3 g','~250 kcal',['300 g paneer','1 pomegranate','150 g cucumber and tomato','lemon, coriander','roasted cumin, salt'],['Cube paneer and chop vegetables.','Mix with lemon and spices.','Top with pomegranate arils.'],'Fresh, quick snack with no deep frying.'],
-['Vegetable moong khichdi + curd + carrot-cucumber','भाजी मूग खिचडी + दही + गाजर-काकडी','Lunch/Dinner','35 min','10 ml','~14 g','~7 g','~420 kcal',['180 g rice','120 g moong dal','300 g mixed vegetables','400 g plain curd','150 g carrot and cucumber','10 ml oil','turmeric, cumin, salt'],['Rinse rice and moong dal.','Pressure-cook with vegetables, turmeric and water.','Finish with measured oil tempering if desired.','Serve with curd and carrot-cucumber.'],'Soft home-style khichdi; easy on busy days.'],
+['Vegetable moong khichdi + curd + carrot-cucumber','भाजी मूग खिचडी + दही + गाजर-काकडी','Lunch/Dinner','35 min','10 ml','~14 g','~7 g','~420 kcal',['180 g rice','120 g moong dal','300 g mixed vegetables','400 g plain curd','150 g carrot and cucumber','10 ml oil','turmeric, cumin, salt'],['Rinse rice and moong dal.','Pressure-cook with vegetables, turmeric and water.','Finish with measured oil tempering if desired.','Serve with curd statistics and carrot-cucumber.'],'Soft home-style khichdi; easy on busy days.'],
 ['Besan-paneer chilla','बेसन-पनीर चिल्ला','Breakfast','20 min','10 ml','~16 g','~5 g','~330 kcal',['160 g besan','150 g paneer','100 g grated carrot, onion and spinach','ginger, cumin, salt','10 ml oil'],['Whisk besan into a smooth batter.','Add vegetables and crumbled paneer.','Cook 4 chillas with measured oil.','Serve hot.'],'Keep batter medium-thick so it cooks evenly.'],
 ['Chole + roti + cabbage-peas + apple','छोले + पोळी + कोबी-वाटाणा + सफरचंद','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~520 kcal',['280 g dry chickpeas, soaked','8 whole-wheat rotis','350 g cabbage','100 g peas','1 apple','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked chickpeas.','Prepare masala and simmer chole.','Cook cabbage and peas until just tender.','Serve with rotis and apple.'],'Home-style chole; keep the vegetable side lightly spiced.'],
 ['Milk + banana + peanut powder','दूध + केळे + शेंगदाणा पूड','Snack','5 min','0 ml','~10 g','~3 g','~250 kcal',['600 ml milk','4 bananas','40 g roasted peanut powder'],['Warm or serve milk as preferred.','Slice one banana per serving.','Sprinkle measured peanut powder.'],'Quick snack; avoid adding sugar routinely.'],
@@ -152,6 +154,8 @@ let language=localStorage.getItem(LANGUAGE_STORAGE)||'both';
 let cloudRefreshTimer=null;
 let cloudInitializing=false;
 let cloudApplyingRemote=false;
+let showRecipeModal=false;
+let editingRecipe=null;
 
 async function save(){
  state.updatedAt=new Date().toISOString();
@@ -324,11 +328,29 @@ function toast(msg){clearTimeout(toastTimer);const el=document.getElementById('t
 function esc(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
 function dateLabel(d){return new Intl.DateTimeFormat('mr-IN',{weekday:'long',day:'numeric',month:'long'}).format(new Date(d+'T00:00:00'))}
 function fmt(d){return new Intl.DateTimeFormat('en-IN',{weekday:'short',day:'numeric',month:'short'}).format(new Date(d+'T00:00:00'))}
-function findRecipe(title){return state.recipes.find(r=>r.name.toLowerCase()===title.toLowerCase())||null}
+function findRecipe(title){return state.recipes.find(r=>r.name.toLowerCase()===String(title||'').toLowerCase())||null}
 function applyTheme(){document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme==='system'?'light dark':theme}
 function setTheme(value){theme=value;localStorage.setItem(THEME_STORAGE,value);applyTheme();render()}
 function applyLanguage(){document.documentElement.dataset.language=language}
-function setLanguage(value){language=['mr','en','both'].includes(value)?value:'both';localStorage.setItem(LANGUAGE_STORAGE,language);applyLanguage();render()}
+function setLanguage(value){language=['mr','en','both'].includes(value)?value:'both';localStorage.setItem(LANGUAGE_STORAGE,language);tts.stop();applyLanguage();render()}
+function ttsButtonLabel(isPlaying, lang=language){
+ if(isPlaying){
+  if(lang==='mr') return '⏹ <span class="tts-label">थांबवा</span>';
+  if(lang==='en') return '⏹ <span class="tts-label">Stop</span>';
+  return '⏹ <span class="tts-label">थांबवा / Stop</span>';
+ }
+ if(lang==='mr') return '🔊 <span class="tts-label">ऐका</span>';
+ if(lang==='en') return '🔊 <span class="tts-label">Listen</span>';
+ return '🔊 <span class="tts-label">ऐका / Listen</span>';
+}
+function ttsButtonHtml(key, mrText, enText, extraClass=''){
+ if(!tts.isSupported()) return '';
+ const active=tts.isSpeaking() && tts.getCurrentKey()===key;
+ const ariaLabel=active
+  ? (language==='mr'?'थांबवा':language==='en'?'Stop':'थांबवा / Stop')
+  : (language==='mr'?'ऐका':language==='en'?'Listen':'ऐका / Listen');
+ return `<button type="button" class="tts-btn ${active?'active':''} ${extraClass}" data-tts-key="${esc(key)}" data-tts-mr="${esc(mrText)}" data-tts-en="${esc(enText)}" aria-label="${esc(ariaLabel)}" aria-pressed="${active?'true':'false'}">${ttsButtonLabel(active,language)}</button>`;
+}
 function ui(mrText,enText){if(language==='mr')return `<span class="lang-mr">${mrText}</span>`;if(language==='en')return `<span class="lang-en">${enText}</span>`;return `<span class="lang-both">${mrText} <span class="lang-separator">·</span> ${enText}</span>`}
 function assignmentsForMeal(meal){return (state.mealAssignments||[]).filter(a=>a.mealEntryId===meal.id);}
 function assignmentOptions(meal,member,assignment){
@@ -341,33 +363,473 @@ function mealAssignmentsView(meal){
  if(!assignments.length)return '';
  return `<div class="meal-assignments"><div class="assignment-title">👨‍👩‍👦 प्रत्येक सदस्यासाठी / Per member</div>${state.members.map(member=>{const a=assignments.find(x=>x.memberId===member.id);const recipe=state.recipes.find(r=>r.id===a?.recipeId);const automatic=state.recipes.find(r=>r.id===a?.automaticRecipeId);return `<div class="assignment-row ${a?.assignmentSource==='manual'?'overridden':''}"><div><b>${esc(member.mr)}</b><small>${esc(member.name)}</small></div><div class="assignment-recipe"><strong>${recipe?esc(recipe.mr):'⚠️ योग्य alternate नाही'}</strong><small>${recipe?esc(recipe.name):esc(a?.overrideReason||'No suitable existing vegetarian alternate')}</small></div><label class="assignment-change"><span>Change for this day</span><select data-change-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">${assignmentOptions(meal,member,a)}</select></label>${a?.assignmentSource==='manual'?`<button class="secondary tiny" data-revert-assignment="${esc(meal.id)}" data-member-id="${esc(member.id)}">Revert to automatic</button>`:''}${automatic&&a?.assignmentSource==='automatic'&&a?.recipeId!==automatic.id?`<span class="alternate-note">Auto alternate · Automatic</span>`:''}</div>`}).join('')}</div>`;
 }
-function mealCard(m){const recipe=findRecipe(m.title);const concepts=recipe?getRecipeNutritionConcepts(recipe,state.nutritionEducation):[];return `<article class="meal-card"><div class="meal-slot"><span>${icon[m.slot]}</span><div><b>${slotMr[m.slot]}</b><small>${m.slot}</small></div></div><h3>${esc(m.marathi)}</h3><p>${esc(m.title)}</p>${concepts.length?`<div class="meal-nutrition-pills">${concepts.slice(0,4).map(e=>`<span>${esc(e.marathiTitle)} · ${esc(e.title)}</span>`).join('')}</div>`:''}<button class="link" data-recipe="${esc(m.title)}">पाककृती पाहा · View recipe →</button>${mealAssignmentsView(m)}${mealBalanceMini(m)}</article>`}
+function mealCard(m){
+ const recipe=findRecipe(m.title);
+ const concepts=recipe?getRecipeNutritionConcepts(recipe,state.nutritionEducation):[];
+ return `<article class="meal-card"><div class="meal-slot"><span>${icon[m.slot]}</span><div><b>${slotMr[m.slot]}</b><small>${m.slot}</small></div></div><h3>${esc(m.marathi)}</h3><p>${esc(m.title)}</p>${concepts.length?`<div class="meal-nutrition-pills">${concepts.slice(0,4).map(e=>`<span>${esc(e.marathiTitle)} · ${esc(e.title)}</span>`).join('')}</div>`:''}<button class="link" data-recipe="${esc(m.title)}">पाककृती पाहा · View recipe →</button><div class="slot-reschedule"><span>${ui('बदला:','Change:')}</span><select data-reschedule-slot="${esc(m.id)}">${state.recipes.map(r=>`<option value="${esc(r.name)}" ${r.name.toLowerCase()===m.title.toLowerCase()?'selected':''}>${esc(r.mr)} · ${esc(r.name)}</option>`).join('')}</select></div>${mealAssignmentsView(m)}${mealBalanceMini(m)}</article>`;
+}
 function mealBalanceMini(meal){const result=evaluateMealBalance(assignmentsForMeal(meal),state.recipes);const present=result.indicators.filter(x=>x.status==='present').map(x=>`<span>✓ ${esc(x.marathiLabel)}</span>`).join('');return present?`<div class="balance-mini"><b>Meal balance · जेवणाचा समतोल</b>${present}</div>`:''}
 function head(k,t,s,action=''){return `<div class="section-head"><div><div class="kicker">${k}</div><h2>${t}</h2><p>${s}</p></div>${action}</div>`}
 function healthTipCard(t,compact=false){return `<article class="health-card ${compact?'compact':''}"><div class="health-card-top"><span class="health-category">${esc(t.category)}</span><span>🌿</span></div><h3>${esc(t.mrTitle)}</h3><p class="health-en">${esc(t.title)}</p><p>${esc(t.mrSummary)}</p><div class="health-action"><b>आजचा छोटा बदल · Small action</b><p>${esc(t.mrAction)}</p></div>${compact?'':`<details><summary>अधिक माहिती · More</summary><p>${esc(t.mrDetail)}</p><p class="muted">${esc(t.detail)}</p>${t.sourceUrl?`<a href="${esc(t.sourceUrl)}" target="_blank" rel="noreferrer">${esc(t.sourceLabel||'Source')}</a>`:''}</details>`}</article>`}
 function oilSnapshot(){const s=state.householdSettings||starter.householdSettings;const size=Math.max(1,Number(s.householdSize)||4);const target=Math.max(1,Number(s.oilMonthlyTargetMl)||3000);const stock=Math.max(0,Number(s.oilStockMl)||0);const daily=(target/30).toFixed(0);const perPerson=(target/30/size).toFixed(0);const status=stock<=target?'Within target':'Stock above target';return `<div class="target-card oil-target"><div class="target-icon">🫗</div><div><div class="kicker">HOUSEHOLD TARGET · घरचा target</div><h3>तेल / Oil</h3><p>${stock.toLocaleString('en-IN')} ml stock · ${status}</p></div><div class="target-values"><strong>${target.toLocaleString('en-IN')} ml</strong><span>monthly planning target</span></div><div class="target-meta"><span>≈ ${daily} ml/day household</span><span>≈ ${perPerson} ml/person/day</span></div><button class="secondary" data-page="settings">Target बदलायचा? →</button></div>`}
 function targetCards(){return (state.healthTargets||[]).filter(x=>x.id!=='household_oil_planning').slice(0,4).map(t=>`<article class="target-mini"><span>${esc(t.category)}</span><strong>${esc(t.valueText||t.value)} ${esc(t.unit||'')}</strong><b>${esc(t.mrLabel)}</b><small>${esc(t.mrContext)}</small></article>`).join('')}
-function today(){const meals=state.meals.filter(x=>x.date===selectedDate);const tasks=state.prep.filter(x=>x.date===selectedDate);const buy=state.shopping.filter(x=>x.need&&!x.purchased).length;const tip=state.healthTips?.[0];return `${head('TODAY · आज',ui('आज काय बनवायचे?','What are we eating today?'),'जेवण, तयारी, खरेदी आणि आरोग्य — एका स्क्रीनवर.')}<div class="today-learning-strip"><div><span class="learning-kicker">🍽️ ${ui('आजच्या ताटात','What are we eating today?')}</span><strong>${ui('अन्न → पोषण → शरीर','Food → nutrition → body')}</strong><small>${ui('प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.','Understand what each food contributes to the body.')}</small></div><button class="secondary" data-page="health">${ui('पोषण समजून घ्या','Learn about nutrition')} →</button></div><div class="today-balance-banner"><div><b>⚖️ ${ui('जेवणाचा समतोल','Meal balance')}</b><span>${ui('प्रथिने · तंतू · भाज्या · फळे · संपूर्ण धान्य','Protein · Fibre · Vegetables · Fruit · Whole grains')}</span></div></div><div class="day-picker"><button data-day="prev">←</button><input id="date" type="date" value="${selectedDate}"><button data-day="next">→</button></div><div class="meal-grid">${meals.map(mealCard).join('')}</div>${todayFoodLearning(meals)}<div class="dashboard-health">${tip?healthTipCard(tip,true):''}${oilSnapshot()}</div><div class="target-grid">${targetCards()}</div><div class="three-col"><div class="panel"><div class="panel-title">🔪 ${ui('आजची तयारी','Today’s prep')}</div>${tasks.length?tasks.map(t=>`<label class="check-row"><input type="checkbox" data-prep="${t.id}" ${t.done?'checked':''}><span><b>${esc(t.mr)}</b><small>${esc(t.task)}</small></span></label>`).join(''):'<p class="muted">आजची तयारी नाही.</p>'}</div><div class="panel"><div class="panel-title">🛒 ${ui('खरेदी','Shopping')}</div><div class="big-number">${buy}</div><p>items to buy / खरेदी करायच्या वस्तू</p><button class="primary" data-page="shopping">खरेदी यादी उघडा →</button></div><div class="panel"><div class="panel-title">🌿 ${ui('आरोग्य मार्गदर्शन','Health Guide')}</div><p>तेल, मीठ, साखर, भाज्या, protein आणि food safety याबद्दल practical guidance.</p><button class="primary" data-page="health">आरोग्य मार्गदर्शन →</button></div></div>`}
+
+function today(){
+ const meals=state.meals.filter(x=>x.date===selectedDate);
+ const tasks=state.prep.filter(x=>x.date===selectedDate);
+ const buy=state.shopping.filter(x=>x.need&&!x.purchased).length;
+ const tip=state.healthTips?.[0];
+ const todayMrSpeech=`आजच्या ताटात: ${meals.map(m=>`${slotMr[m.slot]||m.slot}: ${m.marathi||m.title}`).join(', ')}. अन्न → पोषण → शरीर. प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.`;
+ const todayEnSpeech=`What are we eating today: ${meals.map(m=>`${m.slot}: ${m.title}`).join(', ')}. Food to nutrition to body. Understand what each food contributes to the body.`;
+ return `${head('TODAY · आज',ui('आज काय बनवायचे?','What are we eating today?'),'जेवण, तयारी, खरेदी आणि आरोग्य — एका स्क्रीनवर.')}
+ <div class="today-learning-strip">
+  <div>
+   <span class="learning-kicker">🍽️ ${ui('आजच्या ताटात','What are we eating today?')}</span>
+   <strong>${ui('अन्न → पोषण → शरीर','Food → nutrition → body')}</strong>
+   <small>${ui('प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.','Understand what each food contributes to the body.')}</small>
+  </div>
+  <div class="today-learning-actions">
+   ${ttsButtonHtml('today-learning',todayMrSpeech,todayEnSpeech,'today-tts-btn')}
+   <button class="secondary" data-page="health">${ui('पोषण समजून घ्या','Learn about nutrition')} →</button>
+  </div>
+ </div>
+ <div class="today-balance-banner">
+  <div>
+   <b>⚖️ ${ui('जेवणाचा समतोल','Meal balance')}</b>
+   <span>${ui('प्रथिने · तंतू · भाज्या · फळे · संपूर्ण धान्य','Protein · Fibre · Vegetables · Fruit · Whole grains')}</span>
+  </div>
+ </div>
+ <div class="day-picker">
+  <button data-day="prev">←</button>
+  <input id="date" type="date" value="${selectedDate}">
+  <button data-day="next">→</button>
+ </div>
+ <div class="meal-grid">${meals.map(mealCard).join('')}</div>
+ ${todayFoodLearning(meals)}
+ <div class="dashboard-health">${tip?healthTipCard(tip,true):''}${oilSnapshot()}</div>
+ <div class="target-grid">${targetCards()}</div>
+ <div class="three-col">
+  <div class="panel">
+   <div class="panel-title">🔪 ${ui('आजची तयारी','Today’s prep')}</div>
+   ${tasks.length?tasks.map(t=>`<label class="check-row"><input type="checkbox" data-prep="${t.id}" ${t.done?'checked':''}><span><b>${esc(t.mr)}</b><small>${esc(t.task)}</small></span></label>`).join(''):'<p class="muted">आजची तयारी नाही.</p>'}
+  </div>
+  <div class="panel">
+   <div class="panel-title">🛒 ${ui('खरेदी','Shopping')}</div>
+   <div class="big-number">${buy}</div>
+   <p>items to buy / खरेदी करायच्या वस्तू</p>
+   <button class="primary" data-page="shopping">खरेदी यादी उघडा →</button>
+  </div>
+  <div class="panel">
+   <div class="panel-title">🌿 ${ui('आरोग्य मार्गदर्शन','Health Guide')}</div>
+   <p>तेल, मीठ, साखर, भाज्या, protein आणि food safety याबद्दल practical guidance.</p>
+   <button class="primary" data-page="health">आरोग्य मार्गदर्शन →</button>
+  </div>
+ </div>`;
+}
+
 function calendar(){const month=selectedDate.slice(0,7);const dates=[...new Set(state.meals.filter(x=>x.date.startsWith(month)).map(x=>x.date))];return `${head('CALENDAR · कॅलेंडर','कुटुंबाचे जेवणाचे वेळापत्रक','महिन्याच्या प्रत्येक दिवशी चार meal slots.')}<div class="toolbar"><input id="month" type="month" value="${month}"><span>${dates.length} days · ${dates.length*4} meal entries</span></div><div class="calendar-grid">${dates.map(d=>`<button class="calendar-day ${d===selectedDate?'selected':''}" data-select-date="${d}"><strong>${new Date(d+'T00:00:00').getDate()}</strong><span>${fmt(d)}</span><em>4 meals</em></button>`).join('')}</div><div class="selected-day"><h3>${dateLabel(selectedDate)}</h3>${state.meals.filter(x=>x.date===selectedDate).map(mealCard).join('')}</div>`}
-function recipesView(){return `${head('RECIPES · पाककृती','कसे बनवायचे?','कुटुंबासाठी निवडलेल्या पाककृती — ingredients, time, portions आणि nutrition notes.')}<div class="search"><input id="recipeSearch" placeholder="पाककृती शोधा / Search recipes…"><span id="recipeCount">${state.recipes.length} recipes</span></div><div id="recipeGrid" class="recipe-grid">${state.recipes.map(r=>recipeCard(r)).join('')}</div>`}
+
+function recipesView(){
+ return `${head('RECIPES · पाककृती','कसे बनवायचे?','कुटुंबासाठी निवडलेल्या पाककृती — ingredients, time, portions आणि nutrition notes.')}
+ <div class="search">
+  <input id="recipeSearch" placeholder="पाककृती शोधा / Search recipes…">
+  <button class="primary" data-add-recipe>+ नवीन पाककृती · Add recipe</button>
+  <span id="recipeCount">${state.recipes.length} recipes</span>
+ </div>
+ <div id="recipeGrid" class="recipe-grid">${state.recipes.map(r=>recipeCard(r)).join('')}</div>`;
+}
+
 function recipeCard(r){const concepts=getRecipeNutritionConcepts(r,state.nutritionEducation);return `<button class="recipe-card" data-recipe-id="${r.id}"><div class="recipe-top"><span>🍲</span><small>${esc(r.time)}</small></div><h3>${esc(r.mr)}</h3><p>${esc(r.name)}</p><div class="metrics"><span>💪 ${esc(r.protein)}</span><span>🌾 ${esc(r.fibre)}</span><span>🫗 ${esc(r.oil)}</span></div>${concepts.length?`<div class="recipe-learning">${concepts.slice(0,3).map(e=>`<span>↗ ${esc(e.marathiTitle)}</span>`).join('')}</div>`:''}</button>`}
-function detail(r){const education=getRecipeNutritionConcepts(r,state.nutritionEducation);const ingredients=r.ingredients||[];const legacy=r.legacyUnmapped||[];return `<div><button class="back" data-back>← मागे / Back</button><div class="detail"><div class="detail-head"><div><div class="kicker">RECIPE · पाककृती</div><h2>${esc(r.mr)}</h2><p>${esc(r.name)}</p><div class="recipe-tags"><span>${esc(r.mealCategory||r.course||'Meal')}</span><span>${esc(r.mealRole||'main')}</span><span>${r.dietaryFlags?.containsEgg?'🥚 Egg':'🌿 Vegetarian'}</span></div></div><div class="hero-metrics"><b>${esc(r.time)}</b><span>${esc(r.servings||4)} servings</span></div></div><div class="detail-grid"><div><h3>साहित्य / Ingredients</h3><ul>${ingredients.map(x=>`<li>${typeof x==='string'?esc(x):`${esc(x.quantity)} ${esc(x.unit)} · ${esc(x.ingredientKey)}`}</li>`).join('')}${legacy.map(x=>`<li class="legacy-ingredient">${esc(x)} <small>Legacy text / अजून normalize केलेले नाही</small></li>`).join('')}</ul></div><div><h3>कृती / Method</h3><ol>${(r.method||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div></div><div class="metrics big"><span>💪 Protein ${esc(r.protein||'—')}</span><span>🌾 Fibre ${esc(r.fibre||'—')}</span><span>🫗 Oil ${esc(r.oil||'—')}</span></div>${education.length?`<div class="nutrition-education"><h3>पोषण समजून घ्या / Nutrition explained</h3>${education.map(e=>`<details><summary>${esc(e.marathiTitle)} · ${esc(e.title)}</summary><p><b>काय? / What:</b> ${esc(e.marathiWhat)}<br><small>${esc(e.what)}</small></p><p><b>शरीरात कुठे? / Body use:</b> ${esc(e.marathiBodyUse)}<br><small>${esc(e.bodyUse)}</small></p><p><b>काय करते? / Function:</b> ${esc(e.marathiFunction)}<br><small>${esc(e.function)}</small></p><p><b>का महत्त्वाचे? / Why:</b> ${esc(e.marathiWhyItMatters)}<br><small>${esc(e.whyItMatters)}</small></p><p><b>Sources / स्रोत:</b> ${esc(e.marathiFoodSources)}<br><small>${esc(e.foodSources)}</small></p></details>`).join('')}</div>`:''}<div class="note"><b>Notes / नोंदी</b><p>${esc(r.note)}</p></div></div></div>`}
+
+function detail(r){
+ const education=getRecipeNutritionConcepts(r,state.nutritionEducation);
+ const ingredients=r.ingredients||[];
+ const legacy=r.legacyUnmapped||[];
+ const conceptMr=education.map(e=>`${e.marathiTitle}: ${e.marathiFunction}`).join('. ');
+ const conceptEn=education.map(e=>`${e.title}: ${e.function}`).join('. ');
+ const mrSpeech=[r.mr,`तयारीची वेळ: ${r.time}, ${r.servings||4} व्यक्तींसाठी.`,`पोषण: प्रोटीन ${r.protein||'—'}, फायबर ${r.fibre||'—'}, तेल ${r.oil||'—'}.`,r.note?`नोंद: ${r.note}.`:'',conceptMr?`पोषण माहिती: ${conceptMr}.`:''].filter(Boolean).join(' ');
+ const enSpeech=[r.name,`Cooking time: ${r.time}, for ${r.servings||4} servings.`,`Nutrition: Protein ${r.protein||'—'}, Fibre ${r.fibre||'—'}, Oil ${r.oil||'—'}.`,r.note?`Note: ${r.note}.`:'',conceptEn?`Nutrition details: ${conceptEn}.`:''].filter(Boolean).join(' ');
+ return `<div>
+  <button class="back" data-back>← मागे / Back</button>
+  <div class="detail">
+   <div class="detail-head">
+    <div>
+     <div class="kicker">RECIPE · पाककृती</div>
+     <h2>${esc(r.mr)}</h2>
+     <p>${esc(r.name)}</p>
+     <div class="recipe-tags">
+      <span>${esc(r.mealCategory||r.course||'Meal')}</span>
+      <span>${esc(r.mealRole||'main')}</span>
+      <span>${r.dietaryFlags?.containsEgg?'🥚 Egg':'🌿 Vegetarian'}</span>
+     </div>
+     <div class="detail-actions">
+      <button class="secondary" data-edit-recipe="${esc(r.id)}">✏️ संपादित करा · Edit recipe</button>
+      <div class="recipe-tts-wrap">${ttsButtonHtml(`recipe-${r.id}`,mrSpeech,enSpeech,'recipe-tts-btn')}</div>
+     </div>
+    </div>
+    <div class="hero-metrics">
+     <b>${esc(r.time)}</b>
+     <span>${esc(r.servings||4)} servings</span>
+    </div>
+   </div>
+   <div class="detail-grid">
+    <div>
+     <h3>साहित्य / Ingredients</h3>
+     <ul>
+      ${ingredients.map(x=>`<li>${typeof x==='string'?esc(x):`${esc(x.quantity)} ${esc(x.unit)} · ${esc(x.ingredientKey)}`}</li>`).join('')}
+      ${legacy.map(x=>`<li class="legacy-ingredient">${esc(x)} <small>Legacy text / अजून normalize केलेले नाही</small></li>`).join('')}
+     </ul>
+    </div>
+    <div>
+     <h3>कृती / Method</h3>
+     <ol>${(r.method||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ol>
+    </div>
+   </div>
+   <div class="metrics big">
+    <span>💪 Protein ${esc(r.protein||'—')}</span>
+    <span>🌾 Fibre ${esc(r.fibre||'—')}</span>
+    <span>🫗 Oil ${esc(r.oil||'—')}</span>
+   </div>
+   ${education.length?`<div class="nutrition-education">
+    <h3>पोषण समजून घ्या / Nutrition explained</h3>
+    ${education.map(e=>`<details><summary>${esc(e.marathiTitle)} · ${esc(e.title)}</summary><p><b>काय? / What:</b> ${esc(e.marathiWhat)}<br><small>${esc(e.what)}</small></p><p><b>शरीरात कुठे? / Body use:</b> ${esc(e.marathiBodyUse)}<br><small>${esc(e.bodyUse)}</small></p><p><b>काय करते? / Function:</b> ${esc(e.marathiFunction)}<br><small>${esc(e.function)}</small></p><p><b>का महत्त्वाचे? / Why:</b> ${esc(e.marathiWhyItMatters)}<br><small>${esc(e.whyItMatters)}</small></p><p><b>Sources / स्रोत:</b> ${esc(e.marathiFoodSources)}<br><small>${esc(e.foodSources)}</small></p></details>`).join('')}
+   </div>`:''}
+   <div class="note"><b>Notes / नोंदी</b><p>${esc(r.note)}</p></div>
+  </div>
+ </div>`;
+}
 
 function shopping(){
  const generated=buildShoppingFromAssignments(state.mealAssignments||[],state.recipes,state.recipeIngredients||[],state.ingredientCatalog||[]).map((x,i)=>({id:`derived-${x.canonicalKey}-${x.unit}-${i}`,item:x.name,mr:x.marathiName,category:(state.ingredientCatalog||[]).find(c=>c.canonicalKey===x.canonicalKey)?.category||'Meal-derived',quantity:`${x.quantity} ${x.unit}`,need:false,purchased:false,derived:true}));
- const manual=state.shopping||[]; const rows=[...generated,...manual].map(x=>`<div class="shop-row ${x.purchased?'done':''} ${x.derived?'derived':''}"><input type="checkbox" data-purchased="${esc(x.id)}" ${x.purchased?'checked':''} ${x.derived?'disabled':''}><div><b>${esc(x.mr)}</b><small>${esc(x.item)} · ${esc(x.category)}${x.derived?' · Meal plan':''}</small></div><strong>${esc(x.quantity)}</strong>${x.derived?'<span class="derived-pill">From assignments</span>':`<label class="buy-pill"><input type="checkbox" data-need="${x.id}" ${x.need?'checked':''}><span>खरेदी करायची</span></label>`}</div>`).join('');
- return `${head('SHOPPING · खरेदी','काय आणायचे?','Meal assignments मधून generated quantities + तुमची manual list.')}<div class="toolbar"><span>${manual.filter(x=>x.need&&!x.purchased).length} manual items to buy / खरेदी बाकी</span></div><div class="shopping-list">${rows||'<p class="muted">Shopping data अजून तयार नाही.</p>'}</div>`;
+ const manual=state.shopping||[];
+ const rows=[...generated,...manual].map(x=>`<div class="shop-row ${x.purchased?'done':''} ${x.derived?'derived':''}"><input type="checkbox" data-purchased="${esc(x.id)}" ${x.purchased?'checked':''} ${x.derived?'disabled':''}><div><b>${esc(x.mr)}</b><small>${esc(x.item)} · ${esc(x.category)}${x.derived?' · Meal plan':''}</small></div><strong>${esc(x.quantity)}</strong>${x.derived?'<span class="derived-pill">From assignments</span>':`<label class="buy-pill"><input type="checkbox" data-need="${x.id}" ${x.need?'checked':''}><span>खरेदी करायची</span></label><button class="btn-delete" data-delete-shopping="${esc(x.id)}" title="काढा / Delete">🗑️</button>`}</div>`).join('');
+ return `${head('SHOPPING · खरेदी','काय आणायचे?','Meal assignments मधून generated quantities + तुमची manual list.')}
+ <div class="add-bar">
+  <input id="newShopMr" placeholder="मराठी नाव (उदा. पोहे) · Marathi name">
+  <input id="newShopEn" placeholder="English name (e.g. Poha)">
+  <input id="newShopQty" placeholder="प्रमाण (उदा. 1 kg) · Quantity">
+  <select id="newShopCat">
+   <option value="Staples">Staples / धान्य</option>
+   <option value="Pulses & Legumes">Pulses / कडधान्ये</option>
+   <option value="Dairy">Dairy / दुग्धजन्य</option>
+   <option value="Vegetables">Vegetables / भाज्या</option>
+   <option value="Fruits">Fruits / फळे</option>
+   <option value="Nuts & Seeds">Nuts & Seeds / बिया</option>
+   <option value="Spices">Spices / मसाले</option>
+   <option value="Other">Other / इतर</option>
+  </select>
+  <button class="primary" data-add-shopping>+ जोडा · Add</button>
+ </div>
+ <div class="toolbar"><span>${manual.filter(x=>x.need&&!x.purchased).length} manual items to buy / खरेदी बाकी</span></div>
+ <div class="shopping-list">${rows||'<p class="muted">Shopping data अजून तयार नाही.</p>'}</div>`;
 }
 
-function prepView(){return `${head('PREP · तयारी','आधी काय करायचे?','Batch prep केल्याने weekday cooking सोपी होते.')}<div class="prep-list">${state.prep.map(t=>`<label class="prep-row ${t.done?'done':''}"><input type="checkbox" data-prep="${t.id}" ${t.done?'checked':''}><div><b>${esc(t.mr)}</b><small>${esc(t.task)}</small></div><span>${fmt(t.date)}</span><em>${esc(t.area)}</em></label>`).join('')}</div>`}
+function prepView(){
+ return `${head('PREP · तयारी','आधी काय करायचे?','Batch prep केल्याने weekday cooking सोपी होते.')}
+ <div class="add-bar">
+  <input id="newPrepMr" placeholder="तयारी (मराठी) · Task in Marathi">
+  <input id="newPrepEn" placeholder="Task in English">
+  <input id="newPrepDate" type="date" value="${selectedDate}">
+  <select id="newPrepArea">
+   <option value="Meal Prep">Meal Prep / जेवणाची तयारी</option>
+   <option value="Batter / Sprouting">Batter / Sprouting / मोड आणणे</option>
+   <option value="Storage">Storage / साठवणूक</option>
+   <option value="Shopping">Shopping / खरेदी</option>
+   <option value="Review">Review / आढावा</option>
+  </select>
+  <button class="primary" data-add-prep>+ जोडा · Add</button>
+ </div>
+ <div class="prep-list">${state.prep.map(t=>`<div class="prep-row ${t.done?'done':''}"><input type="checkbox" data-prep="${t.id}" ${t.done?'checked':''}><div><b>${esc(t.mr)}</b><small>${esc(t.task)}</small></div><span>${fmt(t.date)}</span><em>${esc(t.area)}</em><button class="btn-delete" data-delete-prep="${esc(t.id)}" title="काढा / Delete">🗑️</button></div>`).join('')}</div>`;
+}
+
 function familyView(){return `${head('FAMILY · कुटुंब','कुटुंबातील सदस्य','ही माहिती reference साठी आहे; medical prescription नाही.')}<div class="family-grid">${state.members.map(m=>`<article class="person-card"><div class="avatar">${esc(m.name[0])}</div><h3>${esc(m.mr)}</h3><p>${esc(m.name)} · ${esc(m.age)} years</p><div class="person-stats"><span>${esc(m.weight)} kg</span><span>${esc(m.height)} cm</span></div><b>${esc(m.activity)}</b><p class="muted">${esc(m.note)}</p></article>`).join('')}</div>`}
-function nutritionEducationCard(e){return `<article class="nutrition-class-card" data-nutrition-concept="${esc(e.id)}"><div class="nutrition-class-icon">🧠</div><div class="nutrition-class-head"><div><span class="health-category">Nutrition · पोषण</span><h3>${esc(e.marathiTitle)}</h3><p>${esc(e.title)}</p></div></div><div class="nutrition-facts"><section><b>काय? · What is it?</b><p>${esc(e.marathiWhat)}</p><small>${esc(e.what)}</small></section><section><b>शरीरात कुठे? · Where in the body?</b><p>${esc(e.marathiBodyUse)}</p><small>${esc(e.bodyUse)}</small></section><section><b>काय करते? · What does it do?</b><p>${esc(e.marathiFunction)}</p><small>${esc(e.function)}</small></section><section><b>का आवश्यक? · Why does it matter?</b><p>${esc(e.marathiWhyItMatters)}</p><small>${esc(e.whyItMatters)}</small></section><section class="food-sources"><b>अन्न स्रोत · Food sources</b><p>${esc(e.marathiFoodSources)}</p><small>${esc(e.foodSources)}</small></section></div></article>`}
+
+function nutritionEducationCard(e){
+ const mrSpeech=`${e.marathiTitle}. काय आहे: ${e.marathiWhat}. शरीरात कुठे: ${e.marathiBodyUse}. काय करते: ${e.marathiFunction}. का आवश्यक: ${e.marathiWhyItMatters}. प्रमुख अन्न स्रोत: ${e.marathiFoodSources}.`;
+ const enSpeech=`${e.title}. What is it: ${e.what}. Where in the body: ${e.bodyUse}. What does it do: ${e.function}. Why does it matter: ${e.whyItMatters}. Food sources: ${e.foodSources}.`;
+ return `<article class="nutrition-class-card" data-nutrition-concept="${esc(e.id)}">
+  <div class="nutrition-class-icon">🧠</div>
+  <div class="nutrition-class-head">
+   <div>
+    <span class="health-category">Nutrition · पोषण</span>
+    <h3>${esc(e.marathiTitle)}</h3>
+    <p>${esc(e.title)}</p>
+   </div>
+   ${ttsButtonHtml(`nutrition-${e.id}`,mrSpeech,enSpeech,'nutrition-tts-btn')}
+  </div>
+  <div class="nutrition-facts">
+   <section><b>काय? · What is it?</b><p>${esc(e.marathiWhat)}</p><small>${esc(e.what)}</small></section>
+   <section><b>शरीरात कुठे? · Where in the body?</b><p>${esc(e.marathiBodyUse)}</p><small>${esc(e.bodyUse)}</small></section>
+   <section><b>काय करते? · What does it do?</b><p>${esc(e.marathiFunction)}</p><small>${esc(e.function)}</small></section>
+   <section><b>का आवश्यक? · Why does it matter?</b><p>${esc(e.marathiWhyItMatters)}</p><small>${esc(e.whyItMatters)}</small></section>
+   <section class="food-sources"><b>अन्न स्रोत · Food sources</b><p>${esc(e.marathiFoodSources)}</p><small>${esc(e.foodSources)}</small></section>
+  </div>
+ </article>`;
+}
+
 function todayFoodLearning(meals){const seen=new Set();const foods=[];for(const meal of meals){const recipe=findRecipe(meal.title);for(const line of recipe?.ingredients||[]){const key=line.ingredientKey||line.displayText;if(!key||seen.has(key))continue;seen.add(key);const catalog=(state.ingredientCatalog||[]).find(x=>x.canonicalKey===key);foods.push({key,mr:catalog?.marathiName||key,name:catalog?.name||key,category:catalog?.category||'Food'});if(foods.length>=12)break;}if(foods.length>=12)break;}return `<section class="food-learning"><div class="food-learning-head"><div><span class="learning-kicker">🥗 ${ui('आज आपण काय खातोय?','What foods are we eating?')}</span><h3>${ui('अन्नापासून पोषणाकडे','From food to nutrition')}</h3><p>${ui('आजच्या recipes मधील प्रमुख पदार्थ आणि त्यांचा nutrition context.','Key foods from today’s recipes and their nutrition context.')}</p></div></div><div class="food-chip-grid">${foods.map(f=>`<span class="food-chip"><b>${esc(f.mr)}</b><small>${esc(f.name)} · ${esc(f.category)}</small></span>`).join('')||`<p class="muted">${ui('आजचे food details अजून उपलब्ध नाहीत.','Food details are not available yet.')}</p>`}</div></section>`}
+
 function healthView(){const cats=[...new Set((state.healthTips||[]).map(x=>x.category))];const education=(state.nutritionEducation||[]).slice().sort((a,b)=>Number(a.sortOrder??999)-Number(b.sortOrder??999));return `${head('HEALTH GUIDE · आरोग्य','आरोग्य मार्गदर्शन','कुटुंबाच्या रोजच्या निर्णयांसाठी practical bilingual guidance. हे general information आहे; medical prescription नाही.')}<div class="health-notice">🌿 <b>Simple rule:</b> adequacy, balance, moderation and variety. Numeric values below are general references, not individual medical targets.</div><div class="health-filter"><button class="secondary health-filter-btn active" data-health-category="all">सर्व / All</button>${cats.map(c=>`<button class="secondary health-filter-btn" data-health-category="${esc(c)}">${esc(c)}</button>`).join('')}</div><div id="healthGrid" class="health-grid">${(state.healthTips||[]).map(t=>healthTipCard(t)).join('')}</div>${education.length?`<section class="nutrition-learning"><div class="section-head nutrition-section-head"><div><div class="kicker">NUTRITION CLASSROOM · पोषण वर्ग</div><h2>पोषण समजून घ्या · Understand nutrition</h2><p>आपण खात असलेल्या अन्नातून शरीराला काय मिळते, ते काय करते आणि का आवश्यक आहे.</p></div></div><div class="nutrition-class-grid">${education.map(e=>nutritionEducationCard(e)).join('')}</div></section>`:''}<div class="target-grid health-targets">${targetCards()}</div><div class="source-note">Health references are sourced from WHO public-health guidance and are stored with the content record so the family can review the source when needed.</div>`}
-function buildBackupPayload(sourceState=state){return {version:2,exportedAt:new Date().toISOString(),members:sourceState.members,meals:sourceState.meals,recipes:sourceState.recipes,shopping:sourceState.shopping,prep:sourceState.prep,mealAssignments:sourceState.mealAssignments||[],householdSettings:sourceState.householdSettings||starter.householdSettings};}
+
+function buildBackupPayload(sourceState=state){
+ return {
+  version: 2,
+  exportedAt: new Date().toISOString(),
+  members: sourceState.members,
+  meals: sourceState.meals,
+  recipes: sourceState.recipes,
+  shopping: sourceState.shopping,
+  prep: sourceState.prep,
+  mealAssignments:sourceState.mealAssignments||[],
+  householdSettings: sourceState.householdSettings||starter.householdSettings,
+  ingredientCatalog: sourceState.ingredientCatalog||[],
+  recipeIngredients: sourceState.recipeIngredients||[],
+  dietaryRules: sourceState.dietaryRules||[],
+  nutritionEducation: sourceState.nutritionEducation||[]
+ };
+}
+
 function settings(){const s=state.householdSettings||starter.householdSettings;return `${head('SETTINGS · सेटिंग्ज','डेटा आणि appearance','Shared household settings cloud मध्ये; theme या device वर जतन होतो.')}<div class="settings-grid"><div class="panel"><h3>🌗 Theme / थीम</h3><p>प्रत्येक device वर Light, Dark किंवा System निवडा.</p><div class="theme-switcher">${['light','dark','system'].map(x=>`<button class="${theme===x?'active':''}" data-theme="${x}">${x==='light'?'☀️ Light':x==='dark'?'🌙 Dark':'🖥️ System'}</button>`).join('')}</div></div><div class="panel preference-panel"><div class="preference-heading"><div><h3>🌐 Language / भाषा</h3><p>मराठी, English किंवा दोन्ही निवडा.</p></div><span class="preference-icon">अA</span></div><div class="language-switcher">${[['mr','मराठी'],['en','English'],['both','मराठी + English']].map(([x,label])=>`<button class="${language===x?'active':''}" data-language="${x}">${label}</button>`).join('')}</div></div><div class="panel"><h3>🫗 Oil planning / तेल नियोजन</h3><p>Stock आणि monthly planning target वेगळे ठेवा. हा household planning tool आहे; medical limit नाही.</p><label class="field"><span>Current stock (ml)</span><input id="oilStock" type="number" min="0" step="100" value="${esc(s.oilStockMl)}"></label><label class="field"><span>Monthly target (ml)</span><input id="oilTarget" type="number" min="100" step="100" value="${esc(s.oilMonthlyTargetMl)}"></label><label class="field"><span>Household size</span><input id="householdSize" type="number" min="1" max="20" step="1" value="${esc(s.householdSize)}"></label><div class="oil-advice"><b>कुठे कमी करायचे?</b><p>डीप-फ्राय, जास्त तेलाचा तडका आणि खूप तेलकट gravy आधी कमी करा. मोजून तेल वापरा; योग्य ठिकाणी भाजणे, वाफवणे, pressure cooking किंवा कमी तेलात cooking वापरा.</p></div><button class="primary" data-save-settings>Settings जतन करा</button></div><div class="panel"><h3>💾 Backup / बॅकअप</h3><p>दर काही दिवसांनी JSON backup डाउनलोड करा. नवीन फोनवर Import करून data परत आणता येईल.</p><button class="primary" data-export>⬇ Backup डाउनलोड</button><label class="secondary upload">⬆ Backup Import<input id="importFile" type="file" accept="application/json"></label></div><div class="panel"><h3>☁️ Cloud sync / क्लाउड जतन</h3><p>Login/OTP लागत नाही. प्रत्येक device ला anonymous session मिळतो आणि shared household data Supabase मध्ये sync होतो.</p><p class="muted">Health content Supabase मधून येतो; content बदलण्यासाठी frontend code बदलण्याची गरज नाही.</p></div><div class="panel"><h3>↺ Starter data / सुरुवातीचा डेटा</h3><p>Starter calendar, recipes, shopping आणि prep पुन्हा आणा. Local edits replace होतील.</p><button class="danger" data-reset>Reset starter data</button></div></div>`}
-function render(){const nav=[['today','🏠','आज'],['calendar','📅','कॅलेंडर'],['recipes','🍳','पाककृती'],['health','🌿','आरोग्य'],['shopping','🛒','खरेदी'],['prep','🔪','तयारी'],['family','👨‍👩‍👦','कुटुंब'],['settings','⚙️','सेटिंग्ज']];let body=selectedRecipe?detail(selectedRecipe):page==='today'?today():page==='calendar'?calendar():page==='recipes'?recipesView():page==='health'?healthView():page==='shopping'?shopping():page==='prep'?prepView():page==='family'?familyView():settings();document.getElementById('app').innerHTML=`<header class="topbar"><div><div class="eyebrow">FAMILY NUTRITION · कुटुंबाचे पोषण</div><h1>🍛 कुटुंब भोजन <span>Kutumb Bhojan</span></h1></div><div class="topbar-actions"><div class="global-language" aria-label="Language / भाषा">${[['mr','मराठी'],['en','English'],['both','दोन्ही']].map(([x,label])=>`<button class="${language===x?'active':''}" data-language="${x}">${label}</button>`).join('')}</div><div class="global-theme" aria-label="Theme / थीम">${[['light','☀️'],['dark','🌙'],['system','◐']].map(([x,label])=>`<button class="${theme===x?'active':''}" data-theme="${x}" title="${x}">${label}</button>`).join('')}</div><button class="date-chip" data-page="today">${dateLabel(selectedDate)}</button></div></header><main class="layout"><aside class="sidebar"><div class="brand-card"><div class="brand-icon">🍲</div><strong>सोपे कौटुंबिक जेवण</strong><small>Simple family nutrition system</small></div>${nav.map(n=>`<button class="nav ${page===n[0]?'active':''}" data-page="${n[0]}"><span>${n[1]}</span>${n[2]}</button>`).join('')}<div class="sidebar-note"><b>आजचे चार प्रश्न</b><br>काय बनवायचे? → Calendar<br>कसे बनवायचे? → Recipes<br>काय आणायचे? → Shopping<br>आधी काय करायचे? → Prep<br>आरोग्य कसे सुधारायचे? → Health</div></aside><section class="content">${body}</section></main><nav class="mobile-nav">${nav.slice(0,6).map(n=>`<button class="${page===n[0]?'active':''}" data-page="${n[0]}"><span>${n[1]}</span><small>${n[2]}</small></button>`).join('')}</nav><div id="toast"></div>`;bind()}
-function bind(){document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{page=b.dataset.page;selectedRecipe=null;render()});const date=document.getElementById('date');if(date)date.onchange=()=>{selectedDate=date.value;render()};document.querySelector('[data-day="prev"]')?.addEventListener('click',()=>shiftDay(-1));document.querySelector('[data-day="next"]')?.addEventListener('click',()=>shiftDay(1));document.getElementById('month')?.addEventListener('change',e=>{selectedDate=e.target.value+'-01';render()});document.querySelectorAll('[data-select-date]').forEach(b=>b.onclick=()=>{selectedDate=b.dataset.selectDate;render()});document.querySelectorAll('[data-recipe]').forEach(b=>b.onclick=()=>{const r=findRecipe(b.dataset.recipe);if(r){selectedRecipe=r;render()}else toast('Recipe detail not seeded yet / पाककृती तपशील लवकरच')});document.querySelectorAll('[data-recipe-id]').forEach(b=>b.onclick=()=>{selectedRecipe=state.recipes.find(r=>r.id===b.dataset.recipeId);render()});document.querySelector('[data-back]')?.addEventListener('click',()=>{selectedRecipe=null;render()});document.querySelectorAll('[data-prep]').forEach(i=>i.onchange=()=>{const x=state.prep.find(t=>t.id===i.dataset.prep);if(x){x.done=i.checked;save();render()}});document.querySelectorAll('[data-purchased]').forEach(i=>i.onchange=()=>{const x=state.shopping.find(t=>t.id===i.dataset.purchased);if(x){x.purchased=i.checked;save();render()}});document.querySelectorAll('[data-need]').forEach(i=>i.onchange=()=>{const x=state.shopping.find(t=>t.id===i.dataset.need);if(x){x.need=i.checked;save();render()}});document.getElementById('recipeSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();const list=state.recipes.filter(r=>`${r.name} ${r.mr} ${r.course}`.toLowerCase().includes(q));document.getElementById('recipeGrid').innerHTML=list.map(recipeCard).join('');document.getElementById('recipeCount').textContent=`${list.length} recipes` ;bind()});document.querySelectorAll('[data-health-category]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-health-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');const q=b.dataset.healthCategory;document.getElementById('healthGrid').innerHTML=(state.healthTips||[]).filter(t=>q==='all'||t.category===q).map(healthTipCard).join('')});document.querySelectorAll('[data-change-assignment]').forEach(sel=>sel.onchange=async e=>{const mealId=e.target.dataset.changeAssignment,memberId=e.target.dataset.memberId;state.mealAssignments=applyDayLevelOverride(state.mealAssignments,memberId,e.target.value,mealId);await save();render()});document.querySelectorAll('[data-revert-assignment]').forEach(b=>b.onclick=async()=>{state.mealAssignments=revertDayLevelOverride(state.mealAssignments,b.dataset.memberId,b.dataset.revertAssignment);await save();render()});document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>setTheme(b.dataset.theme));document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>setLanguage(b.dataset.language));document.querySelector('[data-save-settings]')?.addEventListener('click',async()=>{const s=state.householdSettings||clone(starter.householdSettings);s.oilStockMl=Math.max(0,Number(document.getElementById('oilStock').value)||0);s.oilMonthlyTargetMl=Math.max(100,Number(document.getElementById('oilTarget').value)||3000);s.householdSize=Math.min(20,Math.max(1,Number(document.getElementById('householdSize').value)||4));state.householdSettings=s;localStorage.setItem(STORAGE,JSON.stringify(state));const ok=await saveHouseholdSettings();if(ok)toast('घरची settings जतन झाली · Saved');render()});document.querySelector('[data-export]')?.addEventListener('click',()=>{const blob=new Blob([JSON.stringify(buildBackupPayload(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`kutumb-bhojan-backup-${new Date().toISOString().slice(0,10)}.json`;a.click()});document.getElementById('importFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=async()=>{try{const x=JSON.parse(r.result);if(x.version!==1&&x.version!==2)throw new Error();state={...clone(starter),...x,version:2};state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,state.recipeIngredients||[],state.ingredientCatalog||[]));ensureAutomaticAssignments();localStorage.setItem(STORAGE,JSON.stringify(state));if(remoteReady){await saveHouseholdSettings();await syncPhase2();}render();toast('Backup restored / बॅकअप परत आला')}catch{toast('Invalid backup / चुकीची बॅकअप फाइल')}};r.readAsText(file)});document.querySelector('[data-reset]')?.addEventListener('click',()=>{if(confirm('Reset local changes? / सर्व स्थानिक बदल काढायचे?')){state=clone(starter);state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,[],[]));ensureAutomaticAssignments();save();if(remoteReady)saveHouseholdSettings();render()}})}
+
+function recipeModalHtml(){
+ const r = editingRecipe;
+ const ingLines = r ? (r.legacyIngredients || r.ingredients || []).map(x => typeof x === 'string' ? x : `${x.quantity} ${x.unit} ${x.ingredientKey}`).join('\n') : '';
+ const methodLines = r ? (r.method || []).join('\n') : '';
+ return `<div class="modal-overlay" id="recipeModal">
+  <div class="modal-card">
+   <div class="modal-head">
+    <h3>${r ? 'पाककृती संपादित करा · Edit Recipe' : 'नवीन पाककृती जोडा · Add Recipe'}</h3>
+    <button class="btn-delete" data-close-recipe-modal title="बंद करा / Close">✕</button>
+   </div>
+   <div class="form-grid">
+    <div>
+     <label>पाककृतीचे मराठी नाव · Marathi Name *</label>
+     <input id="recipeFormMr" placeholder="उदा. मूग भाजी चिल्ला" value="${esc(r?.mr || '')}">
+    </div>
+    <div>
+     <label>English Name *</label>
+     <input id="recipeFormName" placeholder="e.g. Moong Vegetable Chilla" value="${esc(r?.name || '')}">
+    </div>
+    <div>
+     <label>Meal Category · वर्ग</label>
+     <select id="recipeFormCourse">
+      ${['Breakfast','Lunch','Snack','Dinner','Lunch/Dinner'].map(c => `<option value="${c}" ${(r?.course === c || r?.mealCategory === c) ? 'selected' : ''}>${c}</option>`).join('')}
+     </select>
+    </div>
+    <div>
+     <label>Meal Role · भूमिका</label>
+     <select id="recipeFormRole">
+      <option value="main" ${r?.mealRole === 'main' ? 'selected' : ''}>Main · मुख्य पदार्थ</option>
+      <option value="snack" ${r?.mealRole === 'snack' ? 'selected' : ''}>Snack · अल्पोपहार</option>
+      <option value="side" ${r?.mealRole === 'side' ? 'selected' : ''}>Side · पूरक पदार्थ</option>
+     </select>
+    </div>
+    <div>
+     <label>Time · वेळ</label>
+     <input id="recipeFormTime" placeholder="उदा. 20 min" value="${esc(r?.time || '20 min')}">
+    </div>
+    <div>
+     <label>Servings · व्यक्ती</label>
+     <input id="recipeFormServings" type="number" min="1" max="20" value="${esc(r?.servings || 4)}">
+    </div>
+    <div class="full-width">
+     <label>Cooking Method · बनवण्याची पद्धत</label>
+     <input id="recipeFormCookingMethod" placeholder="उदा. Stovetop / तवा / Pressure cook" value="${esc(r?.cookingMethod || 'Stovetop')}">
+    </div>
+    <div class="full-width">
+     <label>Ingredients · साहित्य (प्रत्येक ओळीवर एक · One line each) *</label>
+     <textarea id="recipeFormIngredients" rows="5" placeholder="200 g soaked moong dal&#10;100 g vegetables&#10;10 ml oil">${esc(ingLines)}</textarea>
+    </div>
+    <div class="full-width">
+     <label>Method Steps · कृती (प्रत्येक पायरी नवीन ओळीवर · One step each)</label>
+     <textarea id="recipeFormMethod" rows="4" placeholder="Blend soaked moong.&#10;Cook on tawa with measured oil.">${esc(methodLines)}</textarea>
+    </div>
+    <div class="full-width">
+     <label>Notes · टीप</label>
+     <input id="recipeFormNote" placeholder="उदा. दही किंवा कोशिंबीर सोबत सर्व्ह करा." value="${esc(r?.note || '')}">
+    </div>
+   </div>
+   <div class="modal-actions">
+    <button class="secondary" data-close-recipe-modal>रद्द करा · Cancel</button>
+    <button class="primary" data-save-recipe>जतन करा · Save</button>
+   </div>
+  </div>
+ </div>`;
+}
+
+function render(){
+ const nav=[['today','🏠','आज'],['calendar','📅','कॅलेंडर'],['recipes','🍳','पाककृती'],['health','🌿','आरोग्य'],['shopping','🛒','खरेदी'],['prep','🔪','तयारी'],['family','👨‍👩‍👦','कुटुंब'],['settings','⚙️','सेटिंग्ज']];
+ let body=selectedRecipe?detail(selectedRecipe):page==='today'?today():page==='calendar'?calendar():page==='recipes'?recipesView():page==='health'?healthView():page==='shopping'?shopping():page==='prep'?prepView():page==='family'?familyView():settings();
+ const modal=showRecipeModal?recipeModalHtml():'';
+ document.getElementById('app').innerHTML=`<header class="topbar"><div><div class="eyebrow">FAMILY NUTRITION · कुटुंबाचे पोषण</div><h1>🍛 कुटुंब भोजन <span>Kutumb Bhojan</span></h1></div><div class="topbar-actions"><div class="global-language" aria-label="Language / भाषा">${[['mr','मराठी'],['en','English'],['both','दोन्ही']].map(([x,label])=>`<button class="${language===x?'active':''}" data-language="${x}">${label}</button>`).join('')}</div><div class="global-theme" aria-label="Theme / थीम">${[['light','☀️'],['dark','🌙'],['system','◐']].map(([x,label])=>`<button class="${theme===x?'active':''}" data-theme="${x}" title="${x}">${label}</button>`).join('')}</div><button class="date-chip" data-page="today">${dateLabel(selectedDate)}</button></div></header><main class="layout"><aside class="sidebar"><div class="brand-card"><div class="brand-icon">🍲</div><strong>सोपे कौटुंबिक जेवण</strong><small>Simple family nutrition system</small></div>${nav.map(n=>`<button class="nav ${page===n[0]?'active':''}" data-page="${n[0]}"><span>${n[1]}</span>${n[2]}</button>`).join('')}<div class="sidebar-note"><b>आजचे चार प्रश्न</b><br>काय बनवायचे? → Calendar<br>कसे बनवायचे? → Recipes<br>काय आणायचे? → Shopping<br>आधी काय करायचे? → Prep<br>आरोग्य कसे सुधारायचे? → Health</div></aside><section class="content">${body}</section></main><nav class="mobile-nav">${nav.slice(0,6).map(n=>`<button class="${page===n[0]?'active':''}" data-page="${n[0]}"><span>${n[1]}</span><small>${n[2]}</small></button>`).join('')}</nav>${modal}<div id="toast"></div>`;
+ bind();
+}
+
+function bind(){
+ document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{tts.stop();page=b.dataset.page;selectedRecipe=null;render()});
+ const date=document.getElementById('date');if(date)date.onchange=()=>{selectedDate=date.value;render()};
+ document.querySelector('[data-day="prev"]')?.addEventListener('click',()=>shiftDay(-1));
+ document.querySelector('[data-day="next"]')?.addEventListener('click',()=>shiftDay(1));
+ document.getElementById('month')?.addEventListener('change',e=>{selectedDate=e.target.value+'-01';render()});
+ document.querySelectorAll('[data-select-date]').forEach(b=>b.onclick=()=>{selectedDate=b.dataset.selectDate;render()});
+ document.querySelectorAll('[data-recipe]').forEach(b=>b.onclick=()=>{const r=findRecipe(b.dataset.recipe);if(r){tts.stop();selectedRecipe=r;render()}else toast('Recipe detail not seeded yet / पाककृती तपशील लवकरच')});
+ document.querySelectorAll('[data-recipe-id]').forEach(b=>b.onclick=()=>{tts.stop();selectedRecipe=state.recipes.find(r=>r.id===b.dataset.recipeId);render()});
+ document.querySelector('[data-back]')?.addEventListener('click',()=>{tts.stop();selectedRecipe=null;render()});
+
+ // Recipe Add / Edit
+ document.querySelector('[data-add-recipe]')?.addEventListener('click',()=>{editingRecipe=null;showRecipeModal=true;render()});
+ document.querySelectorAll('[data-edit-recipe]').forEach(b=>b.onclick=()=>{const r=state.recipes.find(x=>x.id===b.dataset.editRecipe);if(r){editingRecipe=r;showRecipeModal=true;render()}});
+ document.querySelectorAll('[data-close-recipe-modal]').forEach(b=>b.onclick=()=>{showRecipeModal=false;editingRecipe=null;render()});
+ document.querySelector('[data-save-recipe]')?.addEventListener('click',async()=>{
+  const name=(document.getElementById('recipeFormName')?.value||'').trim();
+  const mrName=(document.getElementById('recipeFormMr')?.value||'').trim();
+  if(!name||!mrName){toast('नाव आवश्यक आहे · Name is required');return;}
+  const course=document.getElementById('recipeFormCourse')?.value||'Lunch/Dinner';
+  const mealRole=document.getElementById('recipeFormRole')?.value||'main';
+  const time=document.getElementById('recipeFormTime')?.value||'20 min';
+  const servings=Number(document.getElementById('recipeFormServings')?.value)||4;
+  const cookingMethod=document.getElementById('recipeFormCookingMethod')?.value||'Stovetop';
+  const ingredientsRaw=(document.getElementById('recipeFormIngredients')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const methodRaw=(document.getElementById('recipeFormMethod')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const note=(document.getElementById('recipeFormNote')?.value||'').trim();
+
+  const id=editingRecipe?editingRecipe.id:('r_'+Date.now());
+  const existingIdx=state.recipes.findIndex(r=>r.id===id);
+  const baseRecipe={
+   id,
+   name,
+   mr:mrName,
+   course,
+   mealCategory:course,
+   mealRole,
+   time,
+   servings,
+   cookingMethod,
+   ingredients:ingredientsRaw,
+   legacyIngredients:ingredientsRaw,
+   method:methodRaw,
+   note,
+   protein:editingRecipe?.protein||'~15 g',
+   fibre:editingRecipe?.fibre||'~6 g',
+   oil:editingRecipe?.oil||'10 ml'
+  };
+  const structured=buildStructuredRecipe(baseRecipe,state.recipeIngredients||[],state.ingredientCatalog||[]);
+  if(existingIdx>=0) state.recipes[existingIdx]=structured;
+  else state.recipes.unshift(structured);
+
+  showRecipeModal=false;
+  editingRecipe=null;
+  selectedRecipe=structured;
+  ensureAutomaticAssignments();
+  await save();
+  render();
+  toast('पाककृती जतन झाली · Recipe saved');
+ });
+
+ // Slot rescheduling
+ document.querySelectorAll('[data-reschedule-slot]').forEach(sel=>sel.onchange=async e=>{
+  const mealId=e.target.dataset.rescheduleSlot;
+  const meal=state.meals.find(m=>m.id===mealId);
+  const r=findRecipe(e.target.value);
+  if(!meal||!r)return;
+  meal.title=r.name;
+  meal.marathi=r.mr;
+  ensureAutomaticAssignments();
+  if(remoteReady&&remoteHouseholdId){
+   try{
+    await supabase.from('meal_entries').upsert({household_id:remoteHouseholdId,meal_date:meal.date,slot:meal.slot,title:meal.title,marathi_title:meal.marathi,status:meal.status},{onConflict:'household_id,meal_date,slot'});
+   }catch(err){console.warn('Reschedule sync failed',err);}
+  }
+  await save();
+  render();
+  toast('वेळापत्रक बदलले · Meal updated');
+ });
+
+ // Shopping manual add & delete
+ document.querySelector('[data-add-shopping]')?.addEventListener('click',async()=>{
+  const mrInput=document.getElementById('newShopMr');
+  const enInput=document.getElementById('newShopEn');
+  const qtyInput=document.getElementById('newShopQty');
+  const catInput=document.getElementById('newShopCat');
+  const mrName=(mrInput?.value||'').trim();
+  const enName=(enInput?.value||'').trim();
+  const qty=(qtyInput?.value||'').trim()||'1 kg';
+  const cat=catInput?.value||'Staples';
+  if(!mrName&&!enName){toast('नाव आवश्यक आहे · Item name is required');return;}
+  const id='manual_'+Date.now();
+  state.shopping.unshift({id,item:enName||mrName,mr:mrName||enName,category:cat,quantity:qty,need:true,purchased:false});
+  await save();
+  render();
+  toast('खरेदी यादीत जोडले · Added to shopping');
+ });
+ document.querySelectorAll('[data-delete-shopping]').forEach(b=>b.onclick=async()=>{
+  const id=b.dataset.deleteShopping;
+  state.shopping=(state.shopping||[]).filter(x=>x.id!==id);
+  if(remoteReady&&remoteHouseholdId){
+   try{await supabase.from('shopping_items').delete().eq('household_id',remoteHouseholdId).eq('item_key',id);}catch(e){console.warn(e);}
+  }
+  await save();
+  render();
+  toast('वस्तू काढली · Item removed');
+ });
+
+ // Prep manual add & delete
+ document.querySelector('[data-add-prep]')?.addEventListener('click',async()=>{
+  const mrInput=document.getElementById('newPrepMr');
+  const enInput=document.getElementById('newPrepEn');
+  const dateInput=document.getElementById('newPrepDate');
+  const areaInput=document.getElementById('newPrepArea');
+  const mrName=(mrInput?.value||'').trim();
+  const enName=(enInput?.value||'').trim();
+  const dateVal=dateInput?.value||selectedDate;
+  const areaVal=areaInput?.value||'Meal Prep';
+  if(!mrName&&!enName){toast('तयारीचे नाव आवश्यक आहे · Prep task is required');return;}
+  const id='prep_'+Date.now();
+  state.prep.unshift({id,task:enName||mrName,mr:mrName||enName,date:dateVal,area:areaVal,done:false});
+  await save();
+  render();
+  toast('तयारी जोडली · Prep task added');
+ });
+ document.querySelectorAll('[data-delete-prep]').forEach(b=>b.onclick=async()=>{
+  const id=b.dataset.deletePrep;
+  state.prep=(state.prep||[]).filter(x=>x.id!==id);
+  if(remoteReady&&remoteHouseholdId){
+   try{await supabase.from('prep_tasks').delete().eq('household_id',remoteHouseholdId).eq('task_key',id);}catch(e){console.warn(e);}
+  }
+  await save();
+  render();
+  toast('तयारी काढली · Prep task removed');
+ });
+
+ document.querySelectorAll('[data-prep]').forEach(i=>i.onchange=()=>{const x=state.prep.find(t=>t.id===i.dataset.prep);if(x){x.done=i.checked;save();render()}});
+ document.querySelectorAll('[data-purchased]').forEach(i=>i.onchange=()=>{const x=state.shopping.find(t=>t.id===i.dataset.purchased);if(x){x.purchased=i.checked;save();render()}});
+ document.querySelectorAll('[data-need]').forEach(i=>i.onchange=()=>{const x=state.shopping.find(t=>t.id===i.dataset.need);if(x){x.need=i.checked;save();render()}});
+ document.getElementById('recipeSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();const list=state.recipes.filter(r=>`${r.name} ${r.mr} ${r.course}`.toLowerCase().includes(q));document.getElementById('recipeGrid').innerHTML=list.map(recipeCard).join('');document.getElementById('recipeCount').textContent=`${list.length} recipes`;bind()});
+ document.querySelectorAll('[data-health-category]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-health-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');const q=b.dataset.healthCategory;document.getElementById('healthGrid').innerHTML=(state.healthTips||[]).filter(t=>q==='all'||t.category===q).map(healthTipCard).join('')});
+ document.querySelectorAll('[data-change-assignment]').forEach(sel=>sel.onchange=async e=>{const mealId=e.target.dataset.changeAssignment,memberId=e.target.dataset.memberId;state.mealAssignments=applyDayLevelOverride(state.mealAssignments,memberId,e.target.value,mealId);await save();render()});
+ document.querySelectorAll('[data-revert-assignment]').forEach(b=>b.onclick=async()=>{state.mealAssignments=revertDayLevelOverride(state.mealAssignments,b.dataset.memberId,b.dataset.revertAssignment);await save();render()});
+ document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>setTheme(b.dataset.theme));
+ document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>setLanguage(b.dataset.language));
+ document.querySelectorAll('[data-tts-key]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const key=b.dataset.ttsKey;if(tts.getCurrentKey()===key&&tts.isSpeaking()){tts.stop();}else{tts.speak({key,mrText:b.dataset.ttsMr,enText:b.dataset.ttsEn,language});}});
+ document.querySelector('[data-save-settings]')?.addEventListener('click',async()=>{const s=state.householdSettings||clone(starter.householdSettings);s.oilStockMl=Math.max(0,Number(document.getElementById('oilStock').value)||0);s.oilMonthlyTargetMl=Math.max(100,Number(document.getElementById('oilTarget').value)||3000);s.householdSize=Math.min(20,Math.max(1,Number(document.getElementById('householdSize').value)||4));state.householdSettings=s;localStorage.setItem(STORAGE,JSON.stringify(state));const ok=await saveHouseholdSettings();if(ok)toast('घरची settings जतन झाली · Saved');render()});
+ document.querySelector('[data-export]')?.addEventListener('click',()=>{const blob=new Blob([JSON.stringify(buildBackupPayload(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`kutumb-bhojan-backup-${new Date().toISOString().slice(0,10)}.json`;a.click()});
+ document.getElementById('importFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=async()=>{try{const x=JSON.parse(r.result);if(x.version!==1&&x.version!==2)throw new Error('Invalid version');state={...clone(starter),...x,version:2};state.recipes=(state.recipes||[]).map(rec=>buildStructuredRecipe(rec,state.recipeIngredients||[],state.ingredientCatalog||[]));ensureAutomaticAssignments();localStorage.setItem(STORAGE,JSON.stringify(state));if(remoteReady){await saveHouseholdSettings();await syncLocalChanges();await syncPhase2();}render();toast('Backup restored / बॅकअप परत आला')}catch(err){console.warn('Import error',err);toast('Invalid backup / चुकीची बॅकअप फाइल')}};r.readAsText(file)});
+ document.querySelector('[data-reset]')?.addEventListener('click',()=>{if(confirm('Reset local changes? / सर्व स्थानिक बदल काढायचे?')){state=clone(starter);state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,[],[]));ensureAutomaticAssignments();save();if(remoteReady)saveHouseholdSettings();render()}});
+}
+
+tts.onStateChange(({ key, isSpeaking })=>{
+ document.querySelectorAll('[data-tts-key]').forEach(btn=>{
+  const active=isSpeaking && btn.dataset.ttsKey===key;
+  btn.classList.toggle('active', active);
+  btn.setAttribute('aria-pressed', active?'true':'false');
+  const ariaLabel=active
+   ? (language==='mr'?'थांबवा':language==='en'?'Stop':'थांबवा / Stop')
+   : (language==='mr'?'ऐका':language==='en'?'Listen':'ऐका / Listen');
+  btn.setAttribute('aria-label', ariaLabel);
+  btn.innerHTML=ttsButtonLabel(active, language);
+ });
+});
+
 function shiftDay(delta){const d=new Date(selectedDate+'T00:00:00');d.setUTCDate(d.getUTCDate()+delta);selectedDate=d.toISOString().slice(0,10);render()}
 applyTheme();
 applyLanguage();
