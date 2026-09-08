@@ -2579,7 +2579,637 @@ function groupMemberAssignments(assignments = [], members = [], recipes = []) {
   };
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules});
-export {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules};
+const RECIPE_HEAVINESS = Object.freeze({
+  LIGHT: 'light',
+  MODERATE: 'moderate',
+  SUBSTANTIAL: 'substantial',
+  HEAVY: 'heavy'
+});
+
+const MEAL_FORMS = Object.freeze({
+  CHILLA: 'chilla',
+  DOSA_UTTAPAM_PANCAKE: 'dosa_uttapam_pancake',
+  POHA: 'poha',
+  THALIPEETH: 'thalipeeth',
+  DASHMI: 'dashmi',
+  HANDVO: 'handvo',
+  KHICHDI: 'khichdi',
+  USAL: 'usal',
+  BHURJI: 'bhurji',
+  CURRY_SABJI: 'curry_sabji',
+  CHAAT: 'chaat',
+  QUICK_SNACK_BOWL: 'quick_snack_bowl',
+  OTHER: 'other'
+});
+
+const PRIMARY_GRAINS = Object.freeze({
+  WHEAT: 'wheat',
+  JOWAR: 'jowar',
+  RICE: 'rice',
+  POHA: 'poha',
+  RAGI: 'ragi',
+  PAV: 'pav',
+  NONE: 'none',
+  OTHER: 'other'
+});
+
+const PRIMARY_PROTEIN_SOURCES = Object.freeze({
+  LEGUME: 'legume',
+  DAIRY_PANEER: 'dairy_paneer',
+  DAIRY_CURD_MILK: 'dairy_curd_milk',
+  EGG: 'egg',
+  SOY_TOFU: 'soy_tofu',
+  NUTS_SEEDS: 'nuts_seeds',
+  NONE: 'none'
+});
+
+function enrichRecipeMetadata(recipe) {
+  if (!recipe) return null;
+  const name = String(recipe.name || '').trim();
+  const mr = String(recipe.mr || '').trim();
+  const course = String(recipe.course || recipe.mealCategory || '').trim();
+  const ingLines = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  const ingText = ingLines.map(x => typeof x === 'string' ? x : (x.displayText || x.ingredientKey || '')).join(' ').toLowerCase();
+  const allText = `${name} ${mr} ${course} ${ingText} ${(recipe.note || '')} ${(recipe.method || []).join(' ')}`.toLowerCase();
+
+  const containsPaneer = allText.includes('paneer') || allText.includes('पनीर');
+  const containsEgg = allText.includes('egg') || allText.includes('अंडे') || allText.includes('अंडी');
+  const containsSoy = allText.includes('tofu') || allText.includes('soy') || allText.includes('टोफू') || allText.includes('सोया');
+
+  // Primary protein source
+  let primaryProteinSource = PRIMARY_PROTEIN_SOURCES.NONE;
+  if (containsEgg) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.EGG;
+  } else if (containsPaneer) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.DAIRY_PANEER;
+  } else if (containsSoy) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.SOY_TOFU;
+  } else if (allText.includes('chana') || allText.includes('chole') || allText.includes('besan') || allText.includes('moong') || allText.includes('matki') || allText.includes('rajma') || allText.includes('lobia') || allText.includes('dal') || allText.includes('मूग') || allText.includes('हरभरा') || allText.includes('छोले') || allText.includes('मटकी') || allText.includes('राजमा') || allText.includes('चवळी')) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.LEGUME;
+  } else if (allText.includes('curd') || allText.includes('milk') || allText.includes('buttermilk') || allText.includes('दही') || allText.includes('दूध') || allText.includes('ताक')) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.DAIRY_CURD_MILK;
+  } else if (allText.includes('peanut') || allText.includes('flax') || allText.includes('pumpkin seed') || allText.includes('शेंगदाण')) {
+    primaryProteinSource = PRIMARY_PROTEIN_SOURCES.NUTS_SEEDS;
+  }
+
+  // Primary grain
+  let primaryGrain = PRIMARY_GRAINS.NONE;
+  if (allText.includes('roti') || allText.includes('atta') || allText.includes('wheat') || allText.includes('पोळी') || allText.includes('dashmi')) {
+    primaryGrain = PRIMARY_GRAINS.WHEAT;
+  } else if (allText.includes('jowar') || allText.includes('bhakri') || allText.includes('ज्वारी')) {
+    primaryGrain = PRIMARY_GRAINS.JOWAR;
+  } else if (allText.includes('poha') || allText.includes('पोहे')) {
+    primaryGrain = PRIMARY_GRAINS.POHA;
+  } else if (allText.includes('ragi') || allText.includes('नाचणी')) {
+    primaryGrain = PRIMARY_GRAINS.RAGI;
+  } else if (allText.includes('pav') || allText.includes('पाव')) {
+    primaryGrain = PRIMARY_GRAINS.PAV;
+  } else if (allText.includes('rice') || allText.includes('भात') || allText.includes('khichdi') || allText.includes('dosa batter')) {
+    primaryGrain = PRIMARY_GRAINS.RICE;
+  }
+
+  // Meal form
+  const lowerName = name.toLowerCase();
+  let mealForm = MEAL_FORMS.OTHER;
+  if (lowerName.includes('chilla')) mealForm = MEAL_FORMS.CHILLA;
+  else if (lowerName.includes('dosa') || lowerName.includes('uttapam') || lowerName.includes('pesarattu') || lowerName.includes('adai')) mealForm = MEAL_FORMS.DOSA_UTTAPAM_PANCAKE;
+  else if (lowerName.includes('poha')) mealForm = MEAL_FORMS.POHA;
+  else if (lowerName.includes('thalipeeth')) mealForm = MEAL_FORMS.THALIPEETH;
+  else if (lowerName.includes('dashmi')) mealForm = MEAL_FORMS.DASHMI;
+  else if (lowerName.includes('handvo')) mealForm = MEAL_FORMS.HANDVO;
+  else if (lowerName.includes('khichdi')) mealForm = MEAL_FORMS.KHICHDI;
+  else if (lowerName.includes('misal')) mealForm = MEAL_FORMS.USAL;
+  else if (lowerName.includes('usal')) mealForm = MEAL_FORMS.USAL;
+  else if (lowerName.includes('bhurji')) mealForm = MEAL_FORMS.BHURJI;
+  else if (lowerName.includes('curry') || lowerName.includes('masala') || lowerName.includes('chole') || lowerName.includes('paneer') || lowerName.includes('keema') || lowerName.includes('vangi') || lowerName.includes('tikka') || lowerName.includes('bhindi')) mealForm = MEAL_FORMS.CURRY_SABJI;
+  else if (lowerName.includes('chaat')) mealForm = MEAL_FORMS.CHAAT;
+  else if (course.toLowerCase().includes('snack') || lowerName.includes('bowl') || lowerName.includes('curd +') || lowerName.includes('milk +') || lowerName.includes('buttermilk') || lowerName.includes('roasted chana')) mealForm = MEAL_FORMS.QUICK_SNACK_BOWL;
+
+  // Heaviness classification
+  let heaviness = RECIPE_HEAVINESS.MODERATE;
+  if (mealForm === MEAL_FORMS.QUICK_SNACK_BOWL || mealForm === MEAL_FORMS.CHAAT || mealForm === MEAL_FORMS.POHA || lowerName.includes('khichdi')) {
+    heaviness = RECIPE_HEAVINESS.LIGHT;
+  } else if (containsPaneer) {
+    heaviness = RECIPE_HEAVINESS.HEAVY;
+  } else if (lowerName.includes('chole') || lowerName.includes('rajma') || lowerName.includes('misal') || lowerName.includes('handvo') || lowerName.includes('lobia') || lowerName.includes('mixed bean')) {
+    heaviness = RECIPE_HEAVINESS.SUBSTANTIAL;
+  }
+
+  // Preparation attributes
+  const soakingRequired = allText.includes('soaked') || allText.includes('soak');
+  const fermentationRequired = allText.includes('ferment') || lowerName.includes('handvo');
+  const batchPrepSuitable = (recipe.note || '').toLowerCase().includes('batch') || allText.includes('batch');
+
+  // Vegetables and Fruits
+  const vegetableCategories = [];
+  if (allText.includes('spinach') || allText.includes('palak') || allText.includes('methi') || allText.includes('पालक') || allText.includes('मेथी')) vegetableCategories.push('leafy');
+  if (allText.includes('dudhi') || allText.includes('bottle gourd') || allText.includes('दुधी')) vegetableCategories.push('gourd');
+  if (allText.includes('cabbage') || allText.includes('कोबी')) vegetableCategories.push('cabbage');
+  if (allText.includes('cauliflower') || allText.includes('फुलकोबी')) vegetableCategories.push('cauliflower');
+  if (allText.includes('bhindi') || allText.includes('okra') || allText.includes('भेंडी')) vegetableCategories.push('okra');
+  if (allText.includes('carrot') || allText.includes('गाजर')) vegetableCategories.push('root');
+  if (allText.includes('cucumber') || allText.includes('काकडी')) vegetableCategories.push('cucumber');
+  if (allText.includes('tomato') || allText.includes('टोमॅटो')) vegetableCategories.push('tomato');
+
+  const fruits = [];
+  if (allText.includes('apple') || allText.includes('सफरचंद')) fruits.push('apple');
+  if (allText.includes('banana') || allText.includes('केळे')) fruits.push('banana');
+  if (allText.includes('guava') || allText.includes('पेरू')) fruits.push('guava');
+  if (allText.includes('papaya') || allText.includes('पपई')) fruits.push('papaya');
+  if (allText.includes('pomegranate') || allText.includes('डाळिंब')) fruits.push('pomegranate');
+  if (allText.includes('mosambi') || allText.includes('मोसंबी')) fruits.push('mosambi');
+
+  return {
+    ...recipe,
+    containsPaneer,
+    containsEgg,
+    containsSoy,
+    primaryProteinSource,
+    primaryGrain,
+    mealForm,
+    heaviness,
+    soakingRequired,
+    fermentationRequired,
+    batchPrepSuitable,
+    vegetableCategories,
+    fruits
+  };
+}
+
+function createPlanningState({
+  household = {},
+  members = [],
+  rules = DEFAULT_DIETARY_RULES,
+  frequencyRules = DEFAULT_FREQUENCY_RULES,
+  startDate = new Date().toISOString().slice(0, 10),
+  visibleDays = 7,
+  evaluationDays = 30
+} = {}) {
+  return {
+    household: { ...household },
+    members: members.map(m => ({ ...m })),
+    rules: rules.map(r => ({ ...r })),
+    frequencyRules: frequencyRules.map(r => ({ ...r })),
+    planningWindow: {
+      startDate,
+      visibleDays: Number(visibleDays) || 7,
+      evaluationDays: Number(evaluationDays) || 30
+    },
+    plannedMealHistory: new Map(),
+    nutritionCoverage: new Map(),
+    culinaryCoverage: new Map(),
+    practicalityState: {
+      recentHeavinessByDate: new Map(),
+      recentFormsByDate: new Map(),
+      recentGrainsByDate: new Map(),
+      recentProteinsByDate: new Map()
+    }
+  };
+}
+
+function evaluateHardConstraints(recipe, slot, targetDate, state, options = {}) {
+  const reasons = [];
+  if (!recipe) {
+    return { valid: false, reasons: ['Recipe is missing or invalid'] };
+  }
+
+  // 1. Slot compatibility
+  const course = (recipe.course || '').toLowerCase();
+  const slotLower = (slot || '').toLowerCase();
+  let slotMatch = false;
+
+  if (slotLower === 'breakfast') {
+    slotMatch = course.includes('breakfast');
+  } else if (slotLower === 'lunch' || slotLower === 'dinner') {
+    slotMatch = course.includes('lunch') || course.includes('dinner') || course.includes('lunch/dinner');
+  } else if (slotLower === 'snack') {
+    slotMatch = course.includes('snack');
+  } else {
+    slotMatch = course.includes(slotLower);
+  }
+
+  if (!slotMatch) {
+    reasons.push(`Recipe course '${recipe.course}' does not match target slot '${slot}'`);
+  }
+
+  // 2. Unavailable ingredients check
+  if (Array.isArray(options.unavailableIngredients) && options.unavailableIngredients.length > 0) {
+    for (const unavail of options.unavailableIngredients) {
+      if (recipeContainsIngredient(recipe, unavail)) {
+        reasons.push(`Recipe contains unavailable ingredient '${unavail}'`);
+      }
+    }
+  }
+
+  // 3. Frequency Rules (e.g. Paneer monthly limit)
+  const month = targetDate ? targetDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
+  const freqRules = state?.frequencyRules || DEFAULT_FREQUENCY_RULES;
+  for (const rule of freqRules) {
+    if (rule.ingredientKey && recipeContainsIngredient(recipe, rule.ingredientKey)) {
+      const freqKey = `${rule.ingredientKey}:${month}`;
+      const currentCount = state?.frequencyCounts?.get ? (state.frequencyCounts.get(freqKey) || 0) : 0;
+      const maxLimit = rule.maxPerCalendarMonth != null ? rule.maxPerCalendarMonth : 5;
+      if (currentCount >= maxLimit) {
+        reasons.push(`Exceeds monthly frequency limit for '${rule.ingredientKey}' (${currentCount}/${maxLimit} in ${month})`);
+      }
+    }
+  }
+
+  // 4. Consecutive day rule (e.g. paneer shouldn't be served on consecutive days)
+  if (recipeContainsIngredient(recipe, 'paneer') && targetDate && state?.practicalityState?.recentHeavinessByDate) {
+    const prevDateObj = new Date(targetDate);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDateStr = prevDateObj.toISOString().slice(0, 10);
+    const prevRecord = state.practicalityState.recentHeavinessByDate.get(prevDateStr);
+    if (prevRecord && (prevRecord.hasPaneer || prevRecord.containsPaneer)) {
+      reasons.push(`consecutive paneer meal prohibited: previous day ${prevDateStr} already contained paneer`);
+    }
+    const nextDateObj = new Date(targetDate);
+    nextDateObj.setDate(nextDateObj.getDate() + 1);
+    const nextDateStr = nextDateObj.toISOString().slice(0, 10);
+    const nextRecord = state.practicalityState.recentHeavinessByDate.get(nextDateStr);
+    if (nextRecord && (nextRecord.hasPaneer || nextRecord.containsPaneer)) {
+      reasons.push(`consecutive paneer meal prohibited: next day ${nextDateStr} already contains paneer`);
+    }
+  }
+
+  return {
+    valid: reasons.length === 0,
+    reasons
+  };
+}
+
+function evaluateCulinaryAndPracticality(recipe, slot, targetDate, state) {
+  let score = 100;
+  const benefits = [];
+  const penalties = [];
+
+  const heaviness = recipe.heaviness || RECIPE_HEAVINESS.MODERATE;
+
+  // Check heaviness spacing on the same day
+  if (targetDate && state?.plannedMealHistory) {
+    if (slot === 'Dinner') {
+      const lunchRecipe = state.plannedMealHistory.get(`${targetDate}-Lunch`);
+      if (lunchRecipe) {
+        const lunchHeaviness = lunchRecipe.heaviness || RECIPE_HEAVINESS.MODERATE;
+        if (lunchHeaviness === RECIPE_HEAVINESS.SUBSTANTIAL || lunchHeaviness === RECIPE_HEAVINESS.HEAVY) {
+          if (heaviness === RECIPE_HEAVINESS.HEAVY || heaviness === RECIPE_HEAVINESS.SUBSTANTIAL) {
+            score -= 50;
+            penalties.push(`heaviness: dense or heavy lunch on ${targetDate} followed by substantial/heavy dinner`);
+          } else if (heaviness === RECIPE_HEAVINESS.LIGHT) {
+            score += 25;
+            benefits.push('light dinner provides healthy digestive balance after a substantial lunch');
+          }
+        }
+      }
+    } else if (slot === 'Lunch') {
+      const breakfastRecipe = state.plannedMealHistory.get(`${targetDate}-Breakfast`);
+      if (breakfastRecipe && breakfastRecipe.heaviness === RECIPE_HEAVINESS.SUBSTANTIAL) {
+        if (heaviness === RECIPE_HEAVINESS.HEAVY) {
+          score -= 30;
+          penalties.push('heaviness: substantial breakfast followed by heavy lunch');
+        }
+      }
+    }
+  }
+
+  // Check meal form repetition across adjacent days
+  if (targetDate && state?.plannedMealHistory && recipe.mealForm) {
+    const prevDateObj = new Date(targetDate);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDateStr = prevDateObj.toISOString().slice(0, 10);
+    const prevSlotRecipe = state.plannedMealHistory.get(`${prevDateStr}-${slot}`);
+    if (prevSlotRecipe && prevSlotRecipe.mealForm === recipe.mealForm) {
+      score -= 35;
+      penalties.push(`consecutive meal form repetition: '${recipe.mealForm}' was also served in ${slot} on ${prevDateStr}`);
+    }
+
+    if (prevSlotRecipe && prevSlotRecipe.primaryGrain && recipe.primaryGrain && prevSlotRecipe.primaryGrain === recipe.primaryGrain && recipe.primaryGrain !== PRIMARY_GRAINS.NONE) {
+      score -= 15;
+      penalties.push(`consecutive grain repetition: '${recipe.primaryGrain}' repeated from ${prevDateStr}`);
+    }
+  }
+
+  if (recipe.soakingRequired) {
+    benefits.push('rich in traditional legumes/pulses requiring soaking');
+  }
+
+  return {
+    score,
+    benefits,
+    penalties
+  };
+}
+
+function evaluateNutritionDiversity(recipe, slot, targetDate, state) {
+  let score = 100;
+  const benefits = [];
+  const penalties = [];
+
+  const proteinSource = recipe.primaryProteinSource || PRIMARY_PROTEIN_SOURCES.NONE;
+  const grain = recipe.primaryGrain || PRIMARY_GRAINS.NONE;
+
+  if (targetDate && state?.plannedMealHistory) {
+    const recentProteins = [];
+    const recentGrains = [];
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(targetDate);
+      d.setDate(d.getDate() - i);
+      const ds = d.toISOString().slice(0, 10);
+      for (const s of ['Breakfast', 'Lunch', 'Dinner', 'Snack']) {
+        const m = state.plannedMealHistory.get(`${ds}-${s}`);
+        if (m) {
+          if (m.primaryProteinSource) recentProteins.push(m.primaryProteinSource);
+          if (m.primaryGrain) recentGrains.push(m.primaryGrain);
+        }
+      }
+    }
+
+    const proteinOccurrences = recentProteins.filter(p => p === proteinSource && p !== PRIMARY_PROTEIN_SOURCES.NONE).length;
+    if (proteinOccurrences >= 3) {
+      score -= 30;
+      penalties.push(`Frequent protein source repetition: '${proteinSource}' appeared ${proteinOccurrences} times in the last 3 days`);
+    } else if (proteinOccurrences === 0 && proteinSource !== PRIMARY_PROTEIN_SOURCES.NONE) {
+      score += 20;
+      benefits.push(`Introduces novel protein source '${proteinSource}'`);
+    }
+
+    const grainOccurrences = recentGrains.filter(g => g === grain && g !== PRIMARY_GRAINS.NONE).length;
+    if (grainOccurrences >= 4) {
+      score -= 20;
+      penalties.push(`Frequent grain repetition: '${grain}' appeared ${grainOccurrences} times in the last 3 days`);
+    } else if (grain === PRIMARY_GRAINS.JOWAR || grain === PRIMARY_GRAINS.RAGI) {
+      score += 15;
+      benefits.push(`Provides millet diversity with ${grain}`);
+    }
+  }
+
+  if (Array.isArray(recipe.vegetableCategories) && recipe.vegetableCategories.length > 0) {
+    score += recipe.vegetableCategories.length * 5;
+    benefits.push(`Contributes vegetables: ${recipe.vegetableCategories.join(', ')}`);
+  }
+  if (Array.isArray(recipe.fruits) && recipe.fruits.length > 0) {
+    score += recipe.fruits.length * 5;
+    benefits.push(`Contributes fresh seasonal fruit: ${recipe.fruits.join(', ')}`);
+  }
+
+  return {
+    score,
+    benefits,
+    penalties
+  };
+}
+
+function generateCandidates(slot, targetDate, state, candidateRecipes = [], options = {}) {
+  const scored = [];
+  for (const rawRecipe of candidateRecipes) {
+    const recipe = enrichRecipeMetadata(rawRecipe);
+    const hard = evaluateHardConstraints(recipe, slot, targetDate, state, options);
+    if (!hard.valid) continue;
+
+    const culinary = evaluateCulinaryAndPracticality(recipe, slot, targetDate, state);
+    const nutrition = evaluateNutritionDiversity(recipe, slot, targetDate, state);
+    const totalScore = culinary.score + nutrition.score;
+
+    const reasons = [
+      ...culinary.benefits,
+      ...nutrition.benefits,
+      ...culinary.penalties,
+      ...nutrition.penalties
+    ];
+
+    scored.push({
+      recipe,
+      score: totalScore,
+      culinary,
+      nutrition,
+      explanation: {
+        reasons,
+        culinaryBenefits: culinary.benefits,
+        nutritionBenefits: nutrition.benefits,
+        culinaryPenalties: culinary.penalties,
+        nutritionPenalties: nutrition.penalties
+      }
+    });
+  }
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const idA = String(a.recipe.id || a.recipe.name || '');
+    const idB = String(b.recipe.id || b.recipe.name || '');
+    return idA.localeCompare(idB);
+  });
+
+  return scored;
+}
+
+function generatePlan(state, candidateRecipes = [], options = {}) {
+  const days = Number(options.days) || state?.planningWindow?.visibleDays || 7;
+  const startDate = options.startDate || state?.planningWindow?.startDate || new Date().toISOString().slice(0, 10);
+  const slots = options.slots || ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+  const workingState = {
+    ...state,
+    plannedMealHistory: new Map(state.plannedMealHistory || []),
+    frequencyCounts: new Map(state.frequencyCounts || []),
+    practicalityState: {
+      recentHeavinessByDate: new Map(state?.practicalityState?.recentHeavinessByDate || []),
+      recentFormsByDate: new Map(state?.practicalityState?.recentFormsByDate || []),
+      recentGrainsByDate: new Map(state?.practicalityState?.recentGrainsByDate || []),
+      recentProteinsByDate: new Map(state?.practicalityState?.recentProteinsByDate || [])
+    }
+  };
+
+  const plan = [];
+  const warnings = [];
+
+  for (let dayOffset = 0; dayOffset < days; dayOffset++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + dayOffset);
+    const dateStr = d.toISOString().slice(0, 10);
+
+    for (const slot of slots) {
+      const candidates = generateCandidates(slot, dateStr, workingState, candidateRecipes, options);
+      if (!candidates.length) {
+        warnings.push(`Planning conflict: No valid candidate found for ${dateStr} ${slot}`);
+        continue;
+      }
+
+      const best = candidates[0];
+      const recipe = best.recipe;
+
+      workingState.plannedMealHistory.set(`${dateStr}-${slot}`, recipe);
+
+      if (recipe.containsPaneer || recipeContainsIngredient(recipe, 'paneer')) {
+        const month = dateStr.slice(0, 7);
+        const k = `paneer:${month}`;
+        workingState.frequencyCounts.set(k, (workingState.frequencyCounts.get(k) || 0) + 1);
+        const prevDayRec = workingState.practicalityState.recentHeavinessByDate.get(dateStr) || {};
+        workingState.practicalityState.recentHeavinessByDate.set(dateStr, { ...prevDayRec, hasPaneer: true, containsPaneer: true });
+      }
+
+      const existingDateMeta = workingState.practicalityState.recentHeavinessByDate.get(dateStr) || {};
+      workingState.practicalityState.recentHeavinessByDate.set(dateStr, {
+        ...existingDateMeta,
+        [slot]: recipe.heaviness
+      });
+
+      plan.push({
+        date: dateStr,
+        slot,
+        recipeId: recipe.id,
+        recipe,
+        title: recipe.name,
+        marathiTitle: recipe.mr || recipe.name,
+        explanation: best.explanation || { reasons: ['Fits nutritional and variety requirements'] }
+      });
+    }
+  }
+
+  return {
+    success: warnings.length === 0,
+    plan,
+    warnings,
+    state: workingState
+  };
+}
+
+const MEAL_CHANGE_REASONS = {
+  INGREDIENT_UNAVAILABLE: 'ingredient_unavailable',
+  NOT_IN_MOOD: 'not_in_mood',
+  WANT_LIGHTER: 'want_lighter',
+  WANT_DIFFERENT_GRAIN: 'want_different_grain',
+  WANT_DIFFERENT_PROTEIN: 'want_different_protein',
+  WANT_DIFFERENT_MEAL_FORM: 'want_different_meal_form',
+  TOO_REPETITIVE: 'too_repetitive',
+  TOO_MUCH_EFFORT: 'too_much_effort',
+  WANT_QUICK: 'want_quick',
+  CUSTOM: 'custom'
+};
+
+function proposeMealChange(currentMeal, reason, state, candidateRecipes = [], options = {}) {
+  const currentRecipe = currentMeal?.recipe || (candidateRecipes.find(r => r.id === currentMeal?.recipeId) || {});
+  const enrichedCurrent = enrichRecipeMetadata(currentRecipe);
+  const slot = currentMeal?.slot || 'Lunch';
+  const targetDate = currentMeal?.date || new Date().toISOString().slice(0, 10);
+
+  const unavailableIngredients = [...(options.unavailableIngredients || [])];
+  if (options.unavailableIngredient) unavailableIngredients.push(options.unavailableIngredient);
+
+  const scoredAlternatives = [];
+
+  for (const rawRecipe of candidateRecipes) {
+    const candidate = enrichRecipeMetadata(rawRecipe);
+    if (candidate.id === enrichedCurrent.id || candidate.name === enrichedCurrent.name) continue;
+
+    const hard = evaluateHardConstraints(candidate, slot, targetDate, state, {
+      ...options,
+      unavailableIngredients
+    });
+    if (!hard.valid) continue;
+
+    let culinary = evaluateCulinaryAndPracticality(candidate, slot, targetDate, state);
+    let nutrition = evaluateNutritionDiversity(candidate, slot, targetDate, state);
+    let score = culinary.score + nutrition.score;
+    const reasons = [...culinary.benefits, ...nutrition.benefits];
+
+    switch (reason) {
+      case MEAL_CHANGE_REASONS.WANT_LIGHTER:
+        if (candidate.heaviness === RECIPE_HEAVINESS.LIGHT) {
+          score += 60;
+          reasons.unshift('Lighter digestive profile matches request');
+        } else if (candidate.heaviness === RECIPE_HEAVINESS.MODERATE) {
+          score += 20;
+        } else if (candidate.heaviness === RECIPE_HEAVINESS.SUBSTANTIAL || candidate.heaviness === RECIPE_HEAVINESS.HEAVY) {
+          score -= 50;
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.WANT_DIFFERENT_PROTEIN:
+        if (candidate.primaryProteinSource && candidate.primaryProteinSource !== enrichedCurrent.primaryProteinSource && candidate.primaryProteinSource !== PRIMARY_PROTEIN_SOURCES.NONE) {
+          score += 50;
+          reasons.unshift(`Changes protein source to ${candidate.primaryProteinSource}`);
+        } else if (candidate.primaryProteinSource === enrichedCurrent.primaryProteinSource) {
+          score -= 40;
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.WANT_DIFFERENT_GRAIN:
+        if (candidate.primaryGrain && candidate.primaryGrain !== enrichedCurrent.primaryGrain && candidate.primaryGrain !== PRIMARY_GRAINS.NONE) {
+          score += 50;
+          reasons.unshift(`Introduces grain variety with ${candidate.primaryGrain}`);
+        } else if (candidate.primaryGrain === enrichedCurrent.primaryGrain) {
+          score -= 40;
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.WANT_DIFFERENT_MEAL_FORM:
+        if (candidate.mealForm && candidate.mealForm !== enrichedCurrent.mealForm) {
+          score += 40;
+          reasons.unshift(`Offers distinct culinary preparation (${candidate.mealForm})`);
+        } else {
+          score -= 30;
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.WANT_QUICK:
+      case MEAL_CHANGE_REASONS.TOO_MUCH_EFFORT:
+        if (candidate.soakingRequired || candidate.fermentationRequired) {
+          score -= 60;
+        }
+        const timeMinutes = parseInt(candidate.time || '30', 10);
+        if (timeMinutes <= 25) {
+          score += 40;
+          reasons.unshift(`Quick preparation time (~${timeMinutes} min)`);
+        } else if (timeMinutes > 35) {
+          score -= 30;
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.NOT_IN_MOOD:
+        if (candidate.mealForm !== enrichedCurrent.mealForm) {
+          score += 30;
+          reasons.unshift(`Provides fresh variety away from ${enrichedCurrent.mealForm}`);
+        }
+        break;
+
+      case MEAL_CHANGE_REASONS.TOO_REPETITIVE:
+        score -= 20;
+        break;
+
+      default:
+        break;
+    }
+
+    scoredAlternatives.push({
+      recipe: candidate,
+      score,
+      explanation: {
+        reasons,
+        culinaryBenefits: culinary.benefits,
+        nutritionBenefits: nutrition.benefits
+      },
+      culinary,
+      nutrition
+    });
+  }
+
+  scoredAlternatives.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const idA = String(a.recipe.id || a.recipe.name || '');
+    const idB = String(b.recipe.id || b.recipe.name || '');
+    return idA.localeCompare(idB);
+  });
+
+  return {
+    reasonApplied: reason,
+    alternatives: scoredAlternatives,
+    recommendation: scoredAlternatives[0] || null
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) Object.assign(module.exports, {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange});
+export {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange};
+
 
 

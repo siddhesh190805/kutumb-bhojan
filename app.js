@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient, CANONICAL_UI_CONTENT, createContentProvider, mapUiContent, mapFrequencyRules } from './sync.js';
+import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient, CANONICAL_UI_CONTENT, createContentProvider, mapUiContent, mapFrequencyRules, createPlanningState, generatePlan, proposeMealChange, MEAL_CHANGE_REASONS } from './sync.js';
 import { tts } from './tts.js';
 
 const SUPABASE_URL='https://wcwwvyreefkrqchfteqp.supabase.co';
@@ -18,44 +18,38 @@ const family=[
 {id:'tejas',name:'Tejas',mr:'तेजस',age:14,weight:50,height:171,activity:'Highly active / खूप सक्रिय',note:'वाढीचे वय. प्रौढ weight-loss targets वापरू नका. सतत थकवा/वारंवार आजार असल्यास pediatrician.'},
 {id:'siddhesh',name:'Siddhesh',mr:'सिद्धेश',age:21,weight:64,height:182,activity:'Sedentary + calisthenics / बसून काम + व्यायाम',note:'व्यायामाच्या दिवशी पुरेसे जेवण आणि recovery. Protein powder optional आहे.'}
 ];
-const plans=[
-['Moong vegetable chilla + curd','Lobia curry + roti + bhindi + guava','Roasted chana + guava','Paneer vegetable curry + roti + cucumber'],
-['Moong-paneer chilla','Chana usal + jowar bhakri + cabbage-carrot koshimbir','Roasted chana + guava','Tofu bhurji + roti + tomato-cucumber'],
-['Vegetable uttapam + sambar','Rajma rice + cucumber-onion','Buttermilk + roasted chana','Jowar bhakri + matki usal + cauliflower'],
-['Egg bhurji + roti','Mixed bean curry + roti + dudhi','Paneer chaat + pomegranate','Vegetable moong khichdi + curd + carrot-cucumber'],
-['Besan-paneer chilla','Chole + roti + cabbage-peas + apple','Milk + banana + peanut powder','Palak paneer + roti + cucumber'],
-['Handvo + curd','Bharli vangi + jowar bhakri + curd + cucumber','Chana chaat + mosambi','Soy-paneer keema + roti + cabbage'],
-['Methi dashmi + curd + banana','Matki misal + pav + cucumber-onion','Curd + papaya + flax','Paneer vegetable tikka + roti + tomato-cucumber'],
-['Moong vegetable chilla + curd','Lobia curry + roti + bhindi + guava','Peanuts + banana','Paneer bhurji + roti + spinach'],
-['Ragi dosa + sambar','Chana usal + roti + cauliflower-carrot','Sprouted moong chaat','Egg bhurji + roti + dudhi'],
-['Vegetable poha + peanuts + curd','Rajma rice + cucumber + papaya','Buttermilk + roasted chana','Jowar bhakri + matki usal + dudhi'],
-['Pesarattu + peanut chutney','Mixed bean curry + roti + cabbage-carrot','Curd + papaya + flax','Tofu vegetable curry + roti + cucumber'],
-['Besan vegetable chilla + curd','Chole + roti + bhindi + apple','Paneer chaat + pomegranate','Palak paneer + roti + cucumber'],
-['Mixed-dal adai + tomato chutney','Bharli vangi + jowar bhakri + curd','Chana chaat + mosambi','Soy-paneer keema + roti + cabbage'],
-['Protein thalipeeth + curd','Matki misal + pav + cucumber-onion','Milk + banana + peanut powder','Paneer vegetable tikka + roti + tomato-cucumber'],
-['Sprouts poha + curd','Lobia curry + roti + cauliflower','Roasted chana + guava','Paneer bhurji + roti + spinach'],
-['Moong-paneer chilla','Chana usal + jowar bhakri + dudhi','Curd + banana + pumpkin seeds','Tofu bhurji + roti + cucumber-tomato'],
-['Vegetable uttapam + sambar','Rajma rice + cabbage-carrot','Sprouted moong chaat + cucumber','Egg bhurji + roti + bhindi'],
-['Ragi dosa + sambar','Mixed bean curry + roti + dudhi + apple','Buttermilk + roasted chana','Jowar bhakri + matki usal + cabbage'],
-['Besan vegetable chilla + curd','Chole + roti + cauliflower-carrot + papaya','Paneer chaat + pomegranate','Palak paneer + roti + cucumber'],
-['Handvo + curd','Bharli vangi + jowar bhakri + curd','Chana chaat + mosambi','Soy-paneer keema + roti + cabbage'],
-['Methi dashmi + curd + banana','Matki misal + pav + cucumber-onion','Curd + papaya + flax','Paneer vegetable tikka + roti + tomato-cucumber'],
-['Moong vegetable chilla + curd','Lobia curry + roti + bhindi + guava','Peanuts + banana','Paneer bhurji + roti + spinach'],
-['Ragi dosa + sambar','Chana usal + roti + cauliflower-carrot','Sprouted moong chaat','Egg bhurji + roti + dudhi'],
-['Vegetable poha + peanuts + curd','Rajma rice + cucumber + papaya','Buttermilk + roasted chana','Jowar bhakri + matki usal + dudhi'],
-['Pesarattu + peanut chutney','Mixed bean curry + roti + cabbage-carrot','Curd + papaya + flax','Tofu vegetable curry + roti + cucumber'],
-['Besan vegetable chilla + curd','Chole + roti + bhindi + apple','Paneer chaat + pomegranate','Palak paneer + roti + cucumber'],
-['Mixed-dal adai + tomato chutney','Bharli vangi + jowar bhakri + curd','Chana chaat + mosambi','Soy-paneer keema + roti + cabbage'],
-['Protein thalipeeth + curd','Matki misal + pav + cucumber-onion','Milk + banana + peanut powder','Paneer vegetable tikka + roti + tomato-cucumber'],
-['Sprouts poha + curd','Lobia curry + roti + cauliflower','Roasted chana + guava','Paneer bhurji + roti + spinach'],
-['Moong-paneer chilla','Chana usal + jowar bhakri + dudhi','Curd + banana + pumpkin seeds','Tofu bhurji + roti + cucumber-tomato']
-];
 const mr={
 'Moong vegetable chilla + curd':'मूग भाजी चिल्ला + दही','Moong-paneer chilla':'मूग-पनीर चिल्ला','Lobia curry + roti + bhindi + guava':'चवळीची भाजी + पोळी + भेंडी + पेरू','Roasted chana + guava':'भाजलेला हरभरा + पेरू','Paneer vegetable curry + roti + cucumber':'पनीर भाजी + पोळी + काकडी','Chana usal + jowar bhakri + cabbage-carrot koshimbir':'हरभरा उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर','Tofu bhurji + roti + tomato-cucumber':'टोफू भुर्जी + पोळी + टोमॅटो-काकडी','Vegetable uttapam + sambar':'भाजी उत्तपम + सांबार','Rajma rice + cucumber-onion':'राजमा भात + काकडी-कांदा','Buttermilk + roasted chana':'ताक + भाजलेला हरभरा','Jowar bhakri + matki usal + cauliflower':'ज्वारी भाकरी + मटकी उसळ + फुलकोबी','Egg bhurji + roti':'अंडा भुर्जी + पोळी','Mixed bean curry + roti + dudhi':'मिश्र कडधान्य भाजी + पोळी + दुधी','Paneer chaat + pomegranate':'पनीर चाट + डाळिंब','Vegetable moong khichdi + curd + carrot-cucumber':'भाजी मूग खिचडी + दही + गाजर-काकडी','Besan-paneer chilla':'बेसन-पनीर चिल्ला','Chole + roti + cabbage-peas + apple':'छोले + पोळी + कोबी-वाटाणा + सफरचंद','Milk + banana + peanut powder':'दूध + केळे + शेंगदाणा पूड','Palak paneer + roti + cucumber':'पालक पनीर + पोळी + काकडी','Handvo + curd':'हांडवो + दही','Bharli vangi + jowar bhakri + curd + cucumber':'भरली वांगी + ज्वारी भाकरी + दही + काकडी','Chana chaat + mosambi':'हरभरा चाट + मोसंबी','Soy-paneer keema + roti + cabbage':'सोया-पनीर कीमा + पोळी + कोबी','Methi dashmi + curd + banana':'मेथी दशमी + दही + केळे','Matki misal + pav + cucumber-onion':'मटकी मिसळ + पाव + काकडी-कांदा','Curd + papaya + flax':'दही + पपई + जवस','Paneer vegetable tikka + roti + tomato-cucumber':'पनीर भाजी टिक्का + पोळी + टोमॅटो-काकडी','Peanuts + banana':'शेंगदाणे + केळे','Paneer bhurji + roti + spinach':'पनीर भुर्जी + पोळी + पालक','Ragi dosa + sambar':'नाचणी डोसा + सांबार','Chana usal + roti + cauliflower-carrot':'हरभरा उसळ + पोळी + फुलकोबी-गाजर','Sprouted moong chaat':'मोड आलेल्या मूगाची चाट','Egg bhurji + roti + dudhi':'अंडा भुर्जी + पोळी + दुधी','Vegetable poha + peanuts + curd':'भाजी पोहे + शेंगदाणे + दही','Rajma rice + cucumber + papaya':'राजमा भात + काकडी + पपई','Pesarattu + peanut chutney':'पेसरट्टू + शेंगदाणा चटणी','Mixed bean curry + roti + cabbage-carrot':'मिश्र कडधान्य भाजी + पोळी + कोबी-गाजर','Tofu vegetable curry + roti + cucumber':'टोफू भाजी + पोळी + काकडी','Besan vegetable chilla + curd':'बेसन भाजी चिल्ला + दही','Chole + roti + bhindi + apple':'छोले + पोळी + भेंडी + सफरचंद','Mixed-dal adai + tomato chutney':'मिश्र डाळ अडई + टोमॅटो चटणी','Bharli vangi + jowar bhakri + curd':'भरली वांगी + ज्वारी भाकरी + दही','Protein thalipeeth + curd':'प्रोटीन थालीपीठ + दही','Sprouts poha + curd':'मोड आलेले पोहे + दही','Chana usal + jowar bhakri + dudhi':'हरभरा उसळ + ज्वारी भाकरी + दुधी','Curd + banana + pumpkin seeds':'दही + केळे + भोपळ्याच्या बिया','Tofu bhurji + roti + cucumber-tomato':'टोफू भुर्जी + पोळी + काकडी-टोमॅटो','Rajma rice + cabbage-carrot':'राजमा भात + कोबी-गाजर','Sprouted moong chaat + cucumber':'मोड आलेल्या मूगाची चाट + काकडी','Egg bhurji + roti + bhindi':'अंडा भुर्जी + पोळी + भेंडी','Mixed bean curry + roti + dudhi + apple':'मिश्र कडधान्य भाजी + पोळी + दुधी + सफरचंद','Chole + roti + cauliflower-carrot + papaya':'छोले + पोळी + फुलकोबी-गाजर + पपई','Roasted chana + banana':'भाजलेला हरभरा + केळे','Soy-paneer keema + roti + cabbage salad':'सोया-पनीर कीमा + पोळी + कोबी कोशिंबीर','Matki usal + jowar bhakri + cabbage-carrot koshimbir':'मटकी उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर'};
-function makeMeals(){const out=[];const start=new Date('2026-09-07T00:00:00');for(let d=0;d<30;d++){const date=new Date(start);date.setUTCDate(start.getUTCDate()+d);const iso=date.toISOString().slice(0,10);plans[d].forEach((title,i)=>out.push({id:`${iso}-${slots[i]}`,date:iso,slot:slots[i],title,marathi:mr[title]||title,status:'Planned'}));}const overrides={
-'2026-10-05':['Moong vegetable chilla + curd','Chole + roti + bhindi + guava','Roasted chana + banana','Paneer vegetable curry + roti + cucumber'],
-'2026-10-06':['Egg bhurji + roti','Matki usal + jowar bhakri + cabbage-carrot koshimbir','Curd + papaya + flax','Soy-paneer keema + roti + cabbage salad']};
-for(const [date,titles] of Object.entries(overrides)){out.filter(x=>x.date===date).forEach((x,i)=>{x.title=titles[i];x.marathi=mr[titles[i]]||titles[i]})}return out}
+
+function makeMeals(){
+  const planningState = createPlanningState({
+    household: { id: 'hh-canonical-001' },
+    members: family,
+    frequencyRules: DEFAULT_FREQUENCY_RULES,
+    startDate: '2026-09-07',
+    visibleDays: 7,
+    evaluationDays: 30
+  });
+
+  const generated = generatePlan(planningState, recipeObj, {
+    days: 30,
+    startDate: '2026-09-07'
+  });
+
+  if (generated && generated.plan && generated.plan.length) {
+    return generated.plan.map(p => ({
+      id: `${p.date}-${p.slot}`,
+      date: p.date,
+      slot: p.slot,
+      title: p.title,
+      marathi: p.marathiTitle || mr[p.title] || p.title,
+      recipeId: p.recipeId,
+      status: 'Planned',
+      explanation: p.explanation
+    }));
+  }
+  return [];
+}
 const recipes=[
 ['Moong Vegetable Chilla','मूग भाजी चिल्ला','Breakfast','20 min','10 ml','~11 g','~4 g','~220 kcal',['200 g soaked moong dal','100 g vegetables','20 g besan','ginger, cumin, salt','10 ml oil'],['Blend soaked moong with little water.','Mix vegetables, besan and seasoning.','Cook 4 medium chillas with measured oil.'],'Serve with 100–150 g curd per adult portion.'],
 ['Besan Vegetable Chilla + Curd','बेसन भाजी चिल्ला + दही','Breakfast','15 min','10 ml','~10 g','~4 g','~230 kcal',['160 g besan','150 g vegetables','400 g curd','spices','10 ml oil'],['Whisk besan with water and vegetables.','Cook thin chillas.','Serve with curd.'],'Keep batter medium-thick.'],
@@ -159,6 +153,7 @@ let cloudInitializing=false;
 let cloudApplyingRemote=false;
 let showRecipeModal=false;
 let editingRecipe=null;
+let reasonChangeModalMeal=null;
 
 async function save(){
  state.updatedAt=new Date().toISOString();
@@ -467,9 +462,17 @@ function mealCard(m){
   </div>
   <h3>${esc(m.marathi||m.title)}</h3>
   <p>${esc(m.title)}</p>
+  ${m.explanation && m.explanation.reasons && m.explanation.reasons.length ? `
+  <div class="meal-explanation" title="Planner Explanation">
+    <small>💡 ${esc(m.explanation.reasons.slice(0, 2).join(' · '))}</small>
+  </div>` : ''}
   ${concepts.length?`<div class="meal-nutrition-pills">${concepts.slice(0,4).map(e=>`<span>${esc(t(e.marathiTitle,e.title))}</span>`).join('')}</div>`:''}
   <button class="link" data-recipe="${esc(m.title)}">${t('recipe.view_button')}</button>
-  <div class="slot-reschedule"><span>${t('recipe.change_slot')}</span><select data-reschedule-slot="${esc(m.id)}">${state.recipes.map(r=>`<option value="${esc(r.name)}" ${r.name.toLowerCase()===m.title.toLowerCase()?'selected':''}>${esc(t(r.mr,r.name))}</option>`).join('')}</select></div>
+  <div class="slot-reschedule">
+    <span>${t('recipe.change_slot')}</span>
+    <select data-reschedule-slot="${esc(m.id)}">${state.recipes.map(r=>`<option value="${esc(r.name)}" ${r.name.toLowerCase()===m.title.toLowerCase()?'selected':''}>${esc(t(r.mr,r.name))}</option>`).join('')}</select>
+    <button class="btn-reason-change" data-reason-change="${esc(m.id)}" title="${t('meal.reason_change_title', 'कारण निवडून बदला / Change with reason')}">⚡ ${t('meal.reason_change', 'बदला')}</button>
+  </div>
   ${mealAssignmentsView(m)}
   ${mealBalanceMini(m)}
  </article>`;
@@ -802,6 +805,49 @@ function healthView(){
  <div class="source-note">${t('health.source_note')}</div>`;
 }
 
+function reasonModalHtml() {
+  if (!reasonChangeModalMeal) return '';
+  const m = reasonChangeModalMeal;
+  return `<div class="modal-backdrop" data-close-reason-modal>
+   <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+     <div>
+      <div class="eyebrow">${t('meal.change_modal_eyebrow', 'नियोजन बदल · Meal Change')}</div>
+      <h2>${t('meal.change_modal_title', 'हे जेवण का बदलायचे आहे?')}</h2>
+      <p><b>${esc(m.slot)}</b> · ${esc(t(m.marathi, m.title))}</p>
+     </div>
+     <button class="btn-delete" data-close-reason-modal>✕</button>
+    </div>
+    <div class="reason-options">
+     <button class="reason-btn" data-apply-reason="want_lighter">
+      <strong>🍃 ${t('reason.want_lighter', 'हलके जेवण हवे / Want lighter')}</strong>
+      <small>${t('reason.want_lighter_desc', 'पचनास सोपे आणि हलके अन्न पर्याय')}</small>
+     </button>
+     <button class="reason-btn" data-apply-reason="want_different_protein">
+      <strong>💪 ${t('reason.diff_protein', 'वेगळे प्रोटीन हवे / Different protein')}</strong>
+      <small>${t('reason.diff_protein_desc', 'डाळ, कडधान्य किंवा इतर प्रोटीन स्त्रोत')}</small>
+     </button>
+     <button class="reason-btn" data-apply-reason="want_different_grain">
+      <strong>🌾 ${t('reason.diff_grain', 'वेगळे धान्य हवे / Different grain')}</strong>
+      <small>${t('reason.diff_grain_desc', 'गहू सोडून ज्वारी/तांदूळ/नाचणी पर्याय')}</small>
+     </button>
+     <button class="reason-btn" data-apply-reason="want_quick">
+      <strong>⚡ ${t('reason.want_quick', 'कमी वेळात होणारे हवे / Quick prep')}</strong>
+      <small>${t('reason.want_quick_desc', 'भिजवण्याची गरज नसलेले झटपट पर्याय')}</small>
+     </button>
+     <button class="reason-btn" data-apply-reason="want_different_meal_form">
+      <strong>🥘 ${t('reason.diff_form', 'वेगळा प्रकार हवे / Different meal form')}</strong>
+      <small>${t('reason.diff_form_desc', 'भाजी-पोळी, उसळ, खिचडी इत्यादी प्रकार बदला')}</small>
+     </button>
+     <button class="reason-btn" data-apply-reason="not_in_mood">
+      <strong>🍽️ ${t('reason.not_in_mood', 'काहीतरी वेगळे हवे / Not in the mood')}</strong>
+      <small>${t('reason.not_in_mood_desc', 'पोषण सांभाळून वेगळा पाककृती पर्याय')}</small>
+     </button>
+    </div>
+   </div>
+  </div>`;
+}
+
 function buildBackupPayload(sourceState=state){
  return {
   version: 2,
@@ -959,7 +1005,7 @@ function render(){
   ['settings','⚙️',t('nav.settings')]
  ];
  let body=selectedRecipe?detail(selectedRecipe):page==='today'?today():page==='calendar'?calendar():page==='recipes'?recipesView():page==='health'?healthView():page==='shopping'?shopping():page==='prep'?prepView():page==='family'?familyView():settings();
- const modal=showRecipeModal?recipeModalHtml():'';
+ const modal=(showRecipeModal?recipeModalHtml():'')+(reasonChangeModalMeal?reasonModalHtml():'');
  document.getElementById('app').innerHTML=`<header class="topbar">
   <div>
    <div class="eyebrow">${t('identity.eyebrow')}</div>
@@ -1077,10 +1123,64 @@ function bind(){
     await supabase.from('meal_entries').upsert({household_id:remoteHouseholdId,meal_date:meal.date,slot:meal.slot,title:meal.title,marathi_title:meal.marathi,status:meal.status},{onConflict:'household_id,meal_date,slot'});
    }catch(err){console.warn('Reschedule sync failed',err);}
   }
-  await save();
-  render();
-  toast(t('msg.meal_updated'));
- });
+   await save();
+   render();
+   toast(t('msg.meal_updated'));
+  });
+
+  // Reason-aware meal change
+  document.querySelectorAll('[data-reason-change]').forEach(b=>{
+   b.onclick=()=>{
+    const mealId=b.dataset.reasonChange;
+    const meal=state.meals.find(m=>m.id===mealId);
+    if(meal){
+     reasonChangeModalMeal=meal;
+     render();
+    }
+   };
+  });
+
+  document.querySelectorAll('[data-close-reason-modal]').forEach(b=>{
+   b.onclick=()=>{
+    reasonChangeModalMeal=null;
+    render();
+   };
+  });
+
+  document.querySelectorAll('[data-apply-reason]').forEach(b=>{
+   b.onclick=async()=>{
+    const reason=b.dataset.applyReason;
+    const meal=reasonChangeModalMeal;
+    if(!meal)return;
+    const changeRes=proposeMealChange(meal,reason,state,state.recipes);
+    if(changeRes&&changeRes.recommendation){
+     const rec=changeRes.recommendation.recipe;
+     meal.title=rec.name;
+     meal.marathi=rec.mr||rec.name;
+     meal.recipeId=rec.id;
+     meal.explanation=changeRes.recommendation.explanation;
+     ensureAutomaticAssignments();
+     if(remoteReady&&remoteHouseholdId){
+      try{
+       await supabase.from('meal_entries').upsert({
+        household_id:remoteHouseholdId,
+        meal_date:meal.date,
+        slot:meal.slot,
+        title:meal.title,
+        marathi_title:meal.marathi,
+        status:meal.status
+       },{onConflict:'household_id,meal_date,slot'});
+      }catch(err){console.warn('Reschedule sync failed',err);}
+     }
+     await save();
+     reasonChangeModalMeal=null;
+     render();
+     toast(t('msg.meal_updated')+': '+rec.name);
+    }else{
+     toast('No alternatives found satisfying constraints');
+    }
+   };
+  });
 
  // Shopping manual add & delete
  document.querySelector('[data-add-shopping]')?.addEventListener('click',async()=>{
