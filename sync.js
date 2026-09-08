@@ -62,8 +62,2031 @@ function mapHouseholdSettings(row) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { REMOTE_TABLES, PHASE2_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName };
-export { REMOTE_TABLES, PHASE2_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName };
+function mapUiContent(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    if (row.active === false) continue;
+    const key = row.content_key || row.key;
+    if (!key) continue;
+    map.set(key, {
+      key,
+      category: row.category,
+      mr: row.marathi || row.mr || row.mr_text || '',
+      en: row.english || row.en || row.en_text || '',
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {},
+      sortOrder: Number(row.sort_order || row.sortOrder || 0)
+    });
+  }
+  return map;
+}
+
+function createContentProvider(contentData = CANONICAL_UI_CONTENT) {
+  if (!contentData || (contentData instanceof Map && contentData.size === 0) || (typeof contentData === 'object' && Object.keys(contentData).length === 0)) contentData = CANONICAL_UI_CONTENT;
+  const map = contentData instanceof Map
+    ? contentData
+    : Array.isArray(contentData)
+      ? mapUiContent(contentData)
+      : (typeof contentData === 'object' && contentData !== null)
+        ? new Map(Object.entries(contentData))
+        : new Map();
+
+  function resolveItem(key) {
+    if (!key) return null;
+    if (map.has(key)) return map.get(key);
+    const lower = key.toLowerCase();
+    if (map.has(lower)) return map.get(lower);
+    if (key.startsWith('slot.')) {
+      const cap = `slot.${key.slice(5).charAt(0).toUpperCase() + key.slice(6).toLowerCase()}`;
+      if (map.has(cap)) return map.get(cap);
+    }
+    return null;
+  }
+
+  function get(key, language = 'both', fallback = '') {
+    const item = resolveItem(key);
+    if (!item) return fallback !== '' ? fallback : '';
+    const mrText = item.mr || item.marathi || '';
+    const enText = item.en || item.english || '';
+
+    if (language === 'mr') return mrText || enText || fallback || '';
+    if (language === 'en') return enText || mrText || fallback || '';
+    if (!mrText) return enText || fallback || '';
+    if (!enText || enText === mrText) return mrText;
+    return `${mrText} · ${enText}`;
+  }
+
+  function has(key) {
+    return resolveItem(key) !== null;
+  }
+
+  function getRaw(key) {
+    return resolveItem(key);
+  }
+
+  function getByCategory(category) {
+    const items = [];
+    for (const val of map.values()) {
+      if (val.category === category) items.push(val);
+    }
+    return items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }
+
+  function toJSON() {
+    const obj = {};
+    for (const [k, v] of map.entries()) {
+      obj[k] = v;
+    }
+    return obj;
+  }
+
+  return { get, getRaw, getByCategory, toJSON, size: map.size, has: (k) => map.has(k) };
+}
+
+const CANONICAL_UI_CONTENT = {
+  "app.name": {
+    "key": "app.name",
+    "category": "identity",
+    "mr": "कुटुंब भोजन",
+    "en": "Kutumb Bhojan",
+    "metadata": {
+      "short": "कुटुंब भोजन"
+    },
+    "sortOrder": 1
+  },
+  "app.tagline": {
+    "key": "app.tagline",
+    "category": "identity",
+    "mr": "कुटुंबाचे पोषण",
+    "en": "FAMILY NUTRITION",
+    "metadata": {},
+    "sortOrder": 2
+  },
+  "app.brand_strong": {
+    "key": "app.brand_strong",
+    "category": "identity",
+    "mr": "सोपे कौटुंबिक जेवण",
+    "en": "Simple Family Meals",
+    "metadata": {},
+    "sortOrder": 3
+  },
+  "app.brand_small": {
+    "key": "app.brand_small",
+    "category": "identity",
+    "mr": "कुटुंबाची पोषण नियोजन पद्धत",
+    "en": "Family meal planning system",
+    "metadata": {},
+    "sortOrder": 4
+  },
+  "nav.today": {
+    "key": "nav.today",
+    "category": "navigation",
+    "mr": "आज",
+    "en": "Today",
+    "metadata": {
+      "icon": "🏠",
+      "page": "today"
+    },
+    "sortOrder": 10
+  },
+  "nav.calendar": {
+    "key": "nav.calendar",
+    "category": "navigation",
+    "mr": "कॅलेंडर",
+    "en": "Calendar",
+    "metadata": {
+      "icon": "📅",
+      "page": "calendar"
+    },
+    "sortOrder": 20
+  },
+  "nav.recipes": {
+    "key": "nav.recipes",
+    "category": "navigation",
+    "mr": "पाककृती",
+    "en": "Recipes",
+    "metadata": {
+      "icon": "🍳",
+      "page": "recipes"
+    },
+    "sortOrder": 30
+  },
+  "nav.health": {
+    "key": "nav.health",
+    "category": "navigation",
+    "mr": "आरोग्य",
+    "en": "Health",
+    "metadata": {
+      "icon": "🌿",
+      "page": "health"
+    },
+    "sortOrder": 40
+  },
+  "nav.shopping": {
+    "key": "nav.shopping",
+    "category": "navigation",
+    "mr": "खरेदी",
+    "en": "Shopping",
+    "metadata": {
+      "icon": "🛒",
+      "page": "shopping"
+    },
+    "sortOrder": 50
+  },
+  "nav.prep": {
+    "key": "nav.prep",
+    "category": "navigation",
+    "mr": "तयारी",
+    "en": "Prep",
+    "metadata": {
+      "icon": "🔪",
+      "page": "prep"
+    },
+    "sortOrder": 60
+  },
+  "nav.family": {
+    "key": "nav.family",
+    "category": "navigation",
+    "mr": "कुटुंब",
+    "en": "Family",
+    "metadata": {
+      "icon": "👨‍👩‍👦",
+      "page": "family"
+    },
+    "sortOrder": 70
+  },
+  "nav.settings": {
+    "key": "nav.settings",
+    "category": "navigation",
+    "mr": "सेटिंग्ज",
+    "en": "Settings",
+    "metadata": {
+      "icon": "⚙️",
+      "page": "settings"
+    },
+    "sortOrder": 80
+  },
+  "sidebar.questions_title": {
+    "key": "sidebar.questions_title",
+    "category": "sidebar",
+    "mr": "आजचे चार प्रश्न",
+    "en": "Four Daily Questions",
+    "metadata": {},
+    "sortOrder": 90
+  },
+  "sidebar.q_cook": {
+    "key": "sidebar.q_cook",
+    "category": "sidebar",
+    "mr": "काय बनवायचे? → कॅलेंडर",
+    "en": "What to cook? → Calendar",
+    "metadata": {},
+    "sortOrder": 91
+  },
+  "sidebar.q_recipe": {
+    "key": "sidebar.q_recipe",
+    "category": "sidebar",
+    "mr": "कसे बनवायचे? → पाककृती",
+    "en": "How to cook? → Recipes",
+    "metadata": {},
+    "sortOrder": 92
+  },
+  "sidebar.q_buy": {
+    "key": "sidebar.q_buy",
+    "category": "sidebar",
+    "mr": "काय आणायचे? → खरेदी",
+    "en": "What to buy? → Shopping",
+    "metadata": {},
+    "sortOrder": 93
+  },
+  "sidebar.q_prep": {
+    "key": "sidebar.q_prep",
+    "category": "sidebar",
+    "mr": "आधी काय करायचे? → तयारी",
+    "en": "What to prep? → Prep",
+    "metadata": {},
+    "sortOrder": 94
+  },
+  "sidebar.q_health": {
+    "key": "sidebar.q_health",
+    "category": "sidebar",
+    "mr": "आरोग्य कसे सुधारायचे? → आरोग्य",
+    "en": "How to improve health? → Health",
+    "metadata": {},
+    "sortOrder": 95
+  },
+  "slot.Breakfast": {
+    "key": "slot.Breakfast",
+    "category": "meal_slot",
+    "mr": "सकाळचा नाश्ता",
+    "en": "Breakfast",
+    "metadata": {
+      "icon": "🍳",
+      "slot_key": "Breakfast"
+    },
+    "sortOrder": 100
+  },
+  "slot.Lunch": {
+    "key": "slot.Lunch",
+    "category": "meal_slot",
+    "mr": "दुपारचे जेवण",
+    "en": "Lunch",
+    "metadata": {
+      "icon": "🍛",
+      "slot_key": "Lunch"
+    },
+    "sortOrder": 101
+  },
+  "slot.Snack": {
+    "key": "slot.Snack",
+    "category": "meal_slot",
+    "mr": "संध्याकाळचा खाऊ",
+    "en": "Evening Snack",
+    "metadata": {
+      "icon": "🥜",
+      "slot_key": "Snack"
+    },
+    "sortOrder": 102
+  },
+  "slot.Dinner": {
+    "key": "slot.Dinner",
+    "category": "meal_slot",
+    "mr": "रात्रीचे जेवण",
+    "en": "Dinner",
+    "metadata": {
+      "icon": "🍽️",
+      "slot_key": "Dinner"
+    },
+    "sortOrder": 103
+  },
+  "today.kicker": {
+    "key": "today.kicker",
+    "category": "section",
+    "mr": "आज",
+    "en": "TODAY",
+    "metadata": {},
+    "sortOrder": 110
+  },
+  "today.title": {
+    "key": "today.title",
+    "category": "section",
+    "mr": "आज काय बनवायचे?",
+    "en": "What are we eating today?",
+    "metadata": {},
+    "sortOrder": 111
+  },
+  "today.subtitle": {
+    "key": "today.subtitle",
+    "category": "section",
+    "mr": "जेवण, तयारी, खरेदी आणि आरोग्य — एका स्क्रीनवर.",
+    "en": "Meals, prep, shopping, and health — all in one place.",
+    "metadata": {},
+    "sortOrder": 112
+  },
+  "today.learning_kicker": {
+    "key": "today.learning_kicker",
+    "category": "section",
+    "mr": "आजच्या ताटात",
+    "en": "What are we eating today?",
+    "metadata": {},
+    "sortOrder": 113
+  },
+  "today.learning_strong": {
+    "key": "today.learning_strong",
+    "category": "section",
+    "mr": "अन्न → पोषण → शरीर",
+    "en": "Food → nutrition → body",
+    "metadata": {},
+    "sortOrder": 114
+  },
+  "today.learning_small": {
+    "key": "today.learning_small",
+    "category": "section",
+    "mr": "प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.",
+    "en": "Understand what each food contributes to the body.",
+    "metadata": {},
+    "sortOrder": 115
+  },
+  "today.btn_learn_nutrition": {
+    "key": "today.btn_learn_nutrition",
+    "category": "action",
+    "mr": "पोषण समजून घ्या",
+    "en": "Learn about nutrition",
+    "metadata": {},
+    "sortOrder": 116
+  },
+  "today.balance_title": {
+    "key": "today.balance_title",
+    "category": "section",
+    "mr": "जेवणाचा समतोल",
+    "en": "Meal balance",
+    "metadata": {},
+    "sortOrder": 117
+  },
+  "today.balance_sub": {
+    "key": "today.balance_sub",
+    "category": "section",
+    "mr": "प्रथिने · तंतू · भाज्या · फळे · संपूर्ण धान्य",
+    "en": "Protein · Fibre · Vegetables · Fruit · Whole grains",
+    "metadata": {},
+    "sortOrder": 118
+  },
+  "today.prep_title": {
+    "key": "today.prep_title",
+    "category": "section",
+    "mr": "आजची तयारी",
+    "en": "Today’s prep",
+    "metadata": {},
+    "sortOrder": 119
+  },
+  "today.prep_empty": {
+    "key": "today.prep_empty",
+    "category": "empty_state",
+    "mr": "आज कोणतीही तयारी नियोजित नाही.",
+    "en": "No prep tasks planned for today.",
+    "metadata": {},
+    "sortOrder": 120
+  },
+  "today.shopping_title": {
+    "key": "today.shopping_title",
+    "category": "section",
+    "mr": "खरेदी",
+    "en": "Shopping",
+    "metadata": {},
+    "sortOrder": 121
+  },
+  "today.shopping_remaining": {
+    "key": "today.shopping_remaining",
+    "category": "label",
+    "mr": "खरेदी करायच्या वस्तू शिल्लक आहेत",
+    "en": "items to buy remaining",
+    "metadata": {},
+    "sortOrder": 122
+  },
+  "today.btn_open_shopping": {
+    "key": "today.btn_open_shopping",
+    "category": "action",
+    "mr": "खरेदी यादी उघडा →",
+    "en": "Open shopping list →",
+    "metadata": {},
+    "sortOrder": 123
+  },
+  "today.health_title": {
+    "key": "today.health_title",
+    "category": "section",
+    "mr": "आरोग्य मार्गदर्शन",
+    "en": "Health Guide",
+    "metadata": {},
+    "sortOrder": 124
+  },
+  "today.health_desc": {
+    "key": "today.health_desc",
+    "category": "section",
+    "mr": "तेल, मीठ, साखर, भाज्या, protein आणि food safety याबद्दल practical guidance.",
+    "en": "Practical guidance for oil, salt, sugar, vegetables, protein, and food safety.",
+    "metadata": {},
+    "sortOrder": 125
+  },
+  "today.btn_view_health": {
+    "key": "today.btn_view_health",
+    "category": "action",
+    "mr": "आरोग्य मार्गदर्शन पाहा →",
+    "en": "View Health Guide →",
+    "metadata": {},
+    "sortOrder": 126
+  },
+  "today.food_kicker": {
+    "key": "today.food_kicker",
+    "category": "section",
+    "mr": "आज आपण काय खातोय?",
+    "en": "What foods are we eating?",
+    "metadata": {},
+    "sortOrder": 127
+  },
+  "today.food_title": {
+    "key": "today.food_title",
+    "category": "section",
+    "mr": "अन्नापासून पोषणाकडे",
+    "en": "From food to nutrition",
+    "metadata": {},
+    "sortOrder": 128
+  },
+  "today.food_subtitle": {
+    "key": "today.food_subtitle",
+    "category": "section",
+    "mr": "आजच्या recipes मधील प्रमुख पदार्थ आणि त्यांचा nutrition context.",
+    "en": "Key foods from today’s recipes and their nutrition context.",
+    "metadata": {},
+    "sortOrder": 129
+  },
+  "today.food_empty": {
+    "key": "today.food_empty",
+    "category": "empty_state",
+    "mr": "आजचे food details अजून उपलब्ध नाहीत.",
+    "en": "Food details are not available yet.",
+    "metadata": {},
+    "sortOrder": 130
+  },
+  "calendar.kicker": {
+    "key": "calendar.kicker",
+    "category": "section",
+    "mr": "कॅलेंडर",
+    "en": "CALENDAR",
+    "metadata": {},
+    "sortOrder": 140
+  },
+  "calendar.title": {
+    "key": "calendar.title",
+    "category": "section",
+    "mr": "३० दिवसांचे नियोजन",
+    "en": "30-Day Meal Planning",
+    "metadata": {},
+    "sortOrder": 141
+  },
+  "calendar.subtitle": {
+    "key": "calendar.subtitle",
+    "category": "section",
+    "mr": "महिन्याच्या प्रत्येक दिवशी चार meal slots.",
+    "en": "Four meal slots planned for each day of the month.",
+    "metadata": {},
+    "sortOrder": 142
+  },
+  "calendar.days_suffix": {
+    "key": "calendar.days_suffix",
+    "category": "label",
+    "mr": "दिवस",
+    "en": "days",
+    "metadata": {},
+    "sortOrder": 143
+  },
+  "calendar.entries_suffix": {
+    "key": "calendar.entries_suffix",
+    "category": "label",
+    "mr": "जेवण नोंदी",
+    "en": "meal entries",
+    "metadata": {},
+    "sortOrder": 144
+  },
+  "calendar.meals_suffix": {
+    "key": "calendar.meals_suffix",
+    "category": "label",
+    "mr": "जेवण",
+    "en": "meals",
+    "metadata": {},
+    "sortOrder": 145
+  },
+  "recipes.kicker": {
+    "key": "recipes.kicker",
+    "category": "section",
+    "mr": "पाककृती",
+    "en": "RECIPES",
+    "metadata": {},
+    "sortOrder": 150
+  },
+  "recipes.title": {
+    "key": "recipes.title",
+    "category": "section",
+    "mr": "कसे बनवायचे?",
+    "en": "How to cook?",
+    "metadata": {},
+    "sortOrder": 151
+  },
+  "recipes.subtitle": {
+    "key": "recipes.subtitle",
+    "category": "section",
+    "mr": "कुटुंबासाठी निवडलेल्या पाककृती — साहित्य, वेळ, प्रमाण आणि पोषण नोट्स.",
+    "en": "Family recipes with ingredients, cooking time, portions, and nutrition notes.",
+    "metadata": {},
+    "sortOrder": 152
+  },
+  "recipes.search_placeholder": {
+    "key": "recipes.search_placeholder",
+    "category": "label",
+    "mr": "पाककृती शोधा...",
+    "en": "Search recipes...",
+    "metadata": {},
+    "sortOrder": 153
+  },
+  "recipes.btn_add_recipe": {
+    "key": "recipes.btn_add_recipe",
+    "category": "action",
+    "mr": "नवीन पाककृती",
+    "en": "Add recipe",
+    "metadata": {},
+    "sortOrder": 154
+  },
+  "recipes.count_suffix": {
+    "key": "recipes.count_suffix",
+    "category": "label",
+    "mr": "पाककृती",
+    "en": "recipes",
+    "metadata": {},
+    "sortOrder": 155
+  },
+  "recipes.detail_kicker": {
+    "key": "recipes.detail_kicker",
+    "category": "section",
+    "mr": "पाककृती",
+    "en": "RECIPE",
+    "metadata": {},
+    "sortOrder": 156
+  },
+  "recipes.tag_egg": {
+    "key": "recipes.tag_egg",
+    "category": "label",
+    "mr": "अंडे",
+    "en": "Egg",
+    "metadata": {},
+    "sortOrder": 157
+  },
+  "recipes.tag_veg": {
+    "key": "recipes.tag_veg",
+    "category": "label",
+    "mr": "शाकाहारी",
+    "en": "Vegetarian",
+    "metadata": {},
+    "sortOrder": 158
+  },
+  "recipes.btn_edit": {
+    "key": "recipes.btn_edit",
+    "category": "action",
+    "mr": "संपादित करा",
+    "en": "Edit recipe",
+    "metadata": {},
+    "sortOrder": 159
+  },
+  "recipes.servings_suffix": {
+    "key": "recipes.servings_suffix",
+    "category": "label",
+    "mr": "व्यक्ती",
+    "en": "servings",
+    "metadata": {},
+    "sortOrder": 160
+  },
+  "recipes.heading_ingredients": {
+    "key": "recipes.heading_ingredients",
+    "category": "section",
+    "mr": "साहित्य",
+    "en": "Ingredients",
+    "metadata": {},
+    "sortOrder": 161
+  },
+  "recipes.legacy_unmapped": {
+    "key": "recipes.legacy_unmapped",
+    "category": "label",
+    "mr": "जुना मजकूर · अजून normalize केलेला नाही",
+    "en": "Legacy text · unmapped",
+    "metadata": {},
+    "sortOrder": 162
+  },
+  "recipes.heading_method": {
+    "key": "recipes.heading_method",
+    "category": "section",
+    "mr": "कृती पायऱ्या",
+    "en": "Method Steps",
+    "metadata": {},
+    "sortOrder": 163
+  },
+  "recipes.heading_nutrition": {
+    "key": "recipes.heading_nutrition",
+    "category": "section",
+    "mr": "पोषण समजून घ्या",
+    "en": "Nutrition explained",
+    "metadata": {},
+    "sortOrder": 164
+  },
+  "recipes.heading_notes": {
+    "key": "recipes.heading_notes",
+    "category": "section",
+    "mr": "टीप",
+    "en": "Notes",
+    "metadata": {},
+    "sortOrder": 165
+  },
+  "recipes.label_protein": {
+    "key": "recipes.label_protein",
+    "category": "label",
+    "mr": "प्रथिने",
+    "en": "Protein",
+    "metadata": {},
+    "sortOrder": 166
+  },
+  "recipes.label_fibre": {
+    "key": "recipes.label_fibre",
+    "category": "label",
+    "mr": "तंतू",
+    "en": "Fibre",
+    "metadata": {},
+    "sortOrder": 167
+  },
+  "recipes.label_oil": {
+    "key": "recipes.label_oil",
+    "category": "label",
+    "mr": "तेल",
+    "en": "Oil",
+    "metadata": {},
+    "sortOrder": 168
+  },
+  "recipes.modal_edit_title": {
+    "key": "recipes.modal_edit_title",
+    "category": "section",
+    "mr": "पाककृती संपादित करा",
+    "en": "Edit Recipe",
+    "metadata": {},
+    "sortOrder": 169
+  },
+  "recipes.modal_add_title": {
+    "key": "recipes.modal_add_title",
+    "category": "section",
+    "mr": "नवीन पाककृती जोडा",
+    "en": "Add Recipe",
+    "metadata": {},
+    "sortOrder": 170
+  },
+  "recipes.form_mr_name": {
+    "key": "recipes.form_mr_name",
+    "category": "label",
+    "mr": "पाककृतीचे मराठी नाव *",
+    "en": "Marathi Name *",
+    "metadata": {},
+    "sortOrder": 171
+  },
+  "recipes.form_en_name": {
+    "key": "recipes.form_en_name",
+    "category": "label",
+    "mr": "English नाव *",
+    "en": "English Name *",
+    "metadata": {},
+    "sortOrder": 172
+  },
+  "recipes.form_course": {
+    "key": "recipes.form_course",
+    "category": "label",
+    "mr": "वर्ग",
+    "en": "Meal Category",
+    "metadata": {},
+    "sortOrder": 173
+  },
+  "recipes.form_role": {
+    "key": "recipes.form_role",
+    "category": "label",
+    "mr": "भूमिका",
+    "en": "Meal Role",
+    "metadata": {},
+    "sortOrder": 174
+  },
+  "recipes.form_role_main": {
+    "key": "recipes.form_role_main",
+    "category": "label",
+    "mr": "मुख्य पदार्थ",
+    "en": "Main",
+    "metadata": {},
+    "sortOrder": 175
+  },
+  "recipes.form_role_snack": {
+    "key": "recipes.form_role_snack",
+    "category": "label",
+    "mr": "अल्पोपहार",
+    "en": "Snack",
+    "metadata": {},
+    "sortOrder": 176
+  },
+  "recipes.form_role_side": {
+    "key": "recipes.form_role_side",
+    "category": "label",
+    "mr": "पूरक पदार्थ",
+    "en": "Side",
+    "metadata": {},
+    "sortOrder": 177
+  },
+  "recipes.form_time": {
+    "key": "recipes.form_time",
+    "category": "label",
+    "mr": "वेळ",
+    "en": "Time",
+    "metadata": {},
+    "sortOrder": 178
+  },
+  "recipes.form_servings": {
+    "key": "recipes.form_servings",
+    "category": "label",
+    "mr": "व्यक्ती",
+    "en": "Servings",
+    "metadata": {},
+    "sortOrder": 179
+  },
+  "recipes.form_cooking_method": {
+    "key": "recipes.form_cooking_method",
+    "category": "label",
+    "mr": "बनवण्याची पद्धत",
+    "en": "Cooking Method",
+    "metadata": {},
+    "sortOrder": 180
+  },
+  "recipes.form_ingredients": {
+    "key": "recipes.form_ingredients",
+    "category": "label",
+    "mr": "साहित्य (प्रत्येक ओळीवर एक) *",
+    "en": "Ingredients (one per line) *",
+    "metadata": {},
+    "sortOrder": 181
+  },
+  "recipes.form_method": {
+    "key": "recipes.form_method",
+    "category": "label",
+    "mr": "कृती पायऱ्या (प्रत्येक ओळीवर एक)",
+    "en": "Method Steps (one per line)",
+    "metadata": {},
+    "sortOrder": 182
+  },
+  "recipes.form_notes": {
+    "key": "recipes.form_notes",
+    "category": "label",
+    "mr": "नोंद",
+    "en": "Notes",
+    "metadata": {},
+    "sortOrder": 183
+  },
+  "recipes.form_notes_placeholder": {
+    "key": "recipes.form_notes_placeholder",
+    "category": "label",
+    "mr": "उदा. दही किंवा कोशिंबीर सोबत सर्व्ह करा.",
+    "en": "e.g. Serve with curd or salad.",
+    "metadata": {},
+    "sortOrder": 184
+  },
+  "shopping.kicker": {
+    "key": "shopping.kicker",
+    "category": "section",
+    "mr": "खरेदी",
+    "en": "SHOPPING",
+    "metadata": {},
+    "sortOrder": 190
+  },
+  "shopping.title": {
+    "key": "shopping.title",
+    "category": "section",
+    "mr": "काय आणायचे?",
+    "en": "What to buy?",
+    "metadata": {},
+    "sortOrder": 191
+  },
+  "shopping.subtitle": {
+    "key": "shopping.subtitle",
+    "category": "section",
+    "mr": "Meal assignments मधून generated quantities + तुमची manual list.",
+    "en": "Quantities generated from meal assignments plus your manual list.",
+    "metadata": {},
+    "sortOrder": 192
+  },
+  "shopping.placeholder_mr": {
+    "key": "shopping.placeholder_mr",
+    "category": "label",
+    "mr": "मराठी नाव (उदा. पोहे)",
+    "en": "Marathi name (e.g. Pohe)",
+    "metadata": {},
+    "sortOrder": 193
+  },
+  "shopping.placeholder_en": {
+    "key": "shopping.placeholder_en",
+    "category": "label",
+    "mr": "English नाव (उदा. Poha)",
+    "en": "English name (e.g. Poha)",
+    "metadata": {},
+    "sortOrder": 194
+  },
+  "shopping.placeholder_qty": {
+    "key": "shopping.placeholder_qty",
+    "category": "label",
+    "mr": "प्रमाण (उदा. 1 kg)",
+    "en": "Quantity (e.g. 1 kg)",
+    "metadata": {},
+    "sortOrder": 195
+  },
+  "shopping.cat_staples": {
+    "key": "shopping.cat_staples",
+    "category": "label",
+    "mr": "धान्य",
+    "en": "Staples",
+    "metadata": {},
+    "sortOrder": 196
+  },
+  "shopping.cat_pulses": {
+    "key": "shopping.cat_pulses",
+    "category": "label",
+    "mr": "कडधान्ये",
+    "en": "Pulses & Legumes",
+    "metadata": {},
+    "sortOrder": 197
+  },
+  "shopping.cat_dairy": {
+    "key": "shopping.cat_dairy",
+    "category": "label",
+    "mr": "दुग्धजन्य",
+    "en": "Dairy",
+    "metadata": {},
+    "sortOrder": 198
+  },
+  "shopping.cat_vegetables": {
+    "key": "shopping.cat_vegetables",
+    "category": "label",
+    "mr": "भाज्या",
+    "en": "Vegetables",
+    "metadata": {},
+    "sortOrder": 199
+  },
+  "shopping.cat_fruits": {
+    "key": "shopping.cat_fruits",
+    "category": "label",
+    "mr": "फळे",
+    "en": "Fruits",
+    "metadata": {},
+    "sortOrder": 200
+  },
+  "shopping.cat_nuts": {
+    "key": "shopping.cat_nuts",
+    "category": "label",
+    "mr": "बिया आणि सुकामेवा",
+    "en": "Nuts & Seeds",
+    "metadata": {},
+    "sortOrder": 201
+  },
+  "shopping.cat_spices": {
+    "key": "shopping.cat_spices",
+    "category": "label",
+    "mr": "मसाले",
+    "en": "Spices",
+    "metadata": {},
+    "sortOrder": 202
+  },
+  "shopping.cat_other": {
+    "key": "shopping.cat_other",
+    "category": "label",
+    "mr": "इतर",
+    "en": "Other",
+    "metadata": {},
+    "sortOrder": 203
+  },
+  "shopping.btn_add": {
+    "key": "shopping.btn_add",
+    "category": "action",
+    "mr": "जोडा",
+    "en": "Add",
+    "metadata": {},
+    "sortOrder": 204
+  },
+  "shopping.items_to_buy_suffix": {
+    "key": "shopping.items_to_buy_suffix",
+    "category": "label",
+    "mr": "वस्तू खरेदी बाकी",
+    "en": "items to buy",
+    "metadata": {},
+    "sortOrder": 205
+  },
+  "shopping.empty": {
+    "key": "shopping.empty",
+    "category": "empty_state",
+    "mr": "खरेदी यादीत कोणतीही वस्तू नाही.",
+    "en": "No shopping items.",
+    "metadata": {},
+    "sortOrder": 206
+  },
+  "shopping.meal_plan_suffix": {
+    "key": "shopping.meal_plan_suffix",
+    "category": "label",
+    "mr": "जेवण नियोजन",
+    "en": "Meal plan",
+    "metadata": {},
+    "sortOrder": 207
+  },
+  "shopping.from_assignments": {
+    "key": "shopping.from_assignments",
+    "category": "label",
+    "mr": "नियोजनानुसार",
+    "en": "From assignments",
+    "metadata": {},
+    "sortOrder": 208
+  },
+  "shopping.need_to_buy": {
+    "key": "shopping.need_to_buy",
+    "category": "label",
+    "mr": "खरेदी करायची",
+    "en": "Need to buy",
+    "metadata": {},
+    "sortOrder": 209
+  },
+  "shopping.btn_delete": {
+    "key": "shopping.btn_delete",
+    "category": "action",
+    "mr": "काढा",
+    "en": "Delete",
+    "metadata": {},
+    "sortOrder": 210
+  },
+  "prep.kicker": {
+    "key": "prep.kicker",
+    "category": "section",
+    "mr": "तयारी",
+    "en": "PREP",
+    "metadata": {},
+    "sortOrder": 220
+  },
+  "prep.title": {
+    "key": "prep.title",
+    "category": "section",
+    "mr": "आधी काय करायचे?",
+    "en": "What to prep ahead?",
+    "metadata": {},
+    "sortOrder": 221
+  },
+  "prep.subtitle": {
+    "key": "prep.subtitle",
+    "category": "section",
+    "mr": "Batch prep केल्याने weekday cooking सोपी होते.",
+    "en": "Batch prep makes weekday cooking easy and stress-free.",
+    "metadata": {},
+    "sortOrder": 222
+  },
+  "prep.placeholder_mr": {
+    "key": "prep.placeholder_mr",
+    "category": "label",
+    "mr": "तयारीचे नाव (मराठी)",
+    "en": "Prep task (Marathi)",
+    "metadata": {},
+    "sortOrder": 223
+  },
+  "prep.placeholder_en": {
+    "key": "prep.placeholder_en",
+    "category": "label",
+    "mr": "Task name (English)",
+    "en": "Task name (English)",
+    "metadata": {},
+    "sortOrder": 224
+  },
+  "prep.area_meal_prep": {
+    "key": "prep.area_meal_prep",
+    "category": "label",
+    "mr": "जेवणाची तयारी",
+    "en": "Meal Prep",
+    "metadata": {},
+    "sortOrder": 225
+  },
+  "prep.area_batter": {
+    "key": "prep.area_batter",
+    "category": "label",
+    "mr": "मोड आणणे / पीठ भिजवणे",
+    "en": "Batter / Sprouting",
+    "metadata": {},
+    "sortOrder": 226
+  },
+  "prep.area_storage": {
+    "key": "prep.area_storage",
+    "category": "label",
+    "mr": "साठवणूक",
+    "en": "Storage",
+    "metadata": {},
+    "sortOrder": 227
+  },
+  "prep.area_shopping": {
+    "key": "prep.area_shopping",
+    "category": "label",
+    "mr": "खरेदी",
+    "en": "Shopping",
+    "metadata": {},
+    "sortOrder": 228
+  },
+  "prep.area_review": {
+    "key": "prep.area_review",
+    "category": "label",
+    "mr": "आढावा",
+    "en": "Review",
+    "metadata": {},
+    "sortOrder": 229
+  },
+  "family.kicker": {
+    "key": "family.kicker",
+    "category": "section",
+    "mr": "कुटुंब",
+    "en": "FAMILY",
+    "metadata": {},
+    "sortOrder": 240
+  },
+  "family.title": {
+    "key": "family.title",
+    "category": "section",
+    "mr": "कुटुंबातील सदस्य",
+    "en": "Family Profiles",
+    "metadata": {},
+    "sortOrder": 241
+  },
+  "family.subtitle": {
+    "key": "family.subtitle",
+    "category": "section",
+    "mr": "ही माहिती पोषण संदर्भासाठी आहे; medical prescription नाही.",
+    "en": "This information is for household nutritional context; not a clinical prescription.",
+    "metadata": {},
+    "sortOrder": 242
+  },
+  "family.years_suffix": {
+    "key": "family.years_suffix",
+    "category": "label",
+    "mr": "वर्षे",
+    "en": "years",
+    "metadata": {},
+    "sortOrder": 243
+  },
+  "health.kicker": {
+    "key": "health.kicker",
+    "category": "section",
+    "mr": "आरोग्य मार्गदर्शक",
+    "en": "HEALTH GUIDE",
+    "metadata": {},
+    "sortOrder": 250
+  },
+  "health.title": {
+    "key": "health.title",
+    "category": "section",
+    "mr": "आरोग्य मार्गदर्शन",
+    "en": "Practical Health Guidance",
+    "metadata": {},
+    "sortOrder": 251
+  },
+  "health.subtitle": {
+    "key": "health.subtitle",
+    "category": "section",
+    "mr": "कुटुंबाच्या रोजच्या निर्णयांसाठी practical guidance. हे general information आहे; medical prescription नाही.",
+    "en": "Practical guidance for daily household food decisions. General reference, not a medical prescription.",
+    "metadata": {},
+    "sortOrder": 252
+  },
+  "health.notice_title": {
+    "key": "health.notice_title",
+    "category": "section",
+    "mr": "सोपा नियम:",
+    "en": "Simple rule:",
+    "metadata": {},
+    "sortOrder": 253
+  },
+  "health.notice_body": {
+    "key": "health.notice_body",
+    "category": "section",
+    "mr": "आवश्यकता, समतोल, संयम आणि विविधता. खाली दिलेली आकडेवारी सामान्य मार्गदर्शक आहे, वैयक्तिक वैद्यकीय टार्गेट नाही.",
+    "en": "adequacy, balance, moderation and variety. Values below are general references, not individual medical targets.",
+    "metadata": {},
+    "sortOrder": 254
+  },
+  "health.filter_all": {
+    "key": "health.filter_all",
+    "category": "action",
+    "mr": "सर्व",
+    "en": "All",
+    "metadata": {},
+    "sortOrder": 255
+  },
+  "health.classroom_kicker": {
+    "key": "health.classroom_kicker",
+    "category": "section",
+    "mr": "पोषण वर्ग",
+    "en": "NUTRITION CLASSROOM",
+    "metadata": {},
+    "sortOrder": 256
+  },
+  "health.classroom_title": {
+    "key": "health.classroom_title",
+    "category": "section",
+    "mr": "पोषण समजून घ्या",
+    "en": "Understand nutrition",
+    "metadata": {},
+    "sortOrder": 257
+  },
+  "health.classroom_subtitle": {
+    "key": "health.classroom_subtitle",
+    "category": "section",
+    "mr": "आपण खात असलेल्या अन्नातून शरीराला काय मिळते, ते काय करते आणि का आवश्यक आहे.",
+    "en": "What nutrients each food provides, what they do, and why they matter.",
+    "metadata": {},
+    "sortOrder": 258
+  },
+  "health.source_note": {
+    "key": "health.source_note",
+    "category": "section",
+    "mr": "आरोग्य संदर्भ WHO आणि सार्वजनिक आरोग्य मार्गदर्शनातून घेतले आहेत.",
+    "en": "Health references are sourced from WHO public-health guidance and are stored with the content record.",
+    "metadata": {},
+    "sortOrder": 259
+  },
+  "health.small_action": {
+    "key": "health.small_action",
+    "category": "label",
+    "mr": "आजचा छोटा बदल",
+    "en": "Small action",
+    "metadata": {},
+    "sortOrder": 260
+  },
+  "health.more_details": {
+    "key": "health.more_details",
+    "category": "action",
+    "mr": "अधिक माहिती",
+    "en": "More details",
+    "metadata": {},
+    "sortOrder": 261
+  },
+  "health.what_is_it": {
+    "key": "health.what_is_it",
+    "category": "label",
+    "mr": "काय आहे?",
+    "en": "What is it?",
+    "metadata": {},
+    "sortOrder": 262
+  },
+  "health.where_in_body": {
+    "key": "health.where_in_body",
+    "category": "label",
+    "mr": "शरीरात कुठे वापर?",
+    "en": "Where in the body?",
+    "metadata": {},
+    "sortOrder": 263
+  },
+  "health.what_does_it_do": {
+    "key": "health.what_does_it_do",
+    "category": "label",
+    "mr": "काय करते?",
+    "en": "What does it do?",
+    "metadata": {},
+    "sortOrder": 264
+  },
+  "health.why_does_it_matter": {
+    "key": "health.why_does_it_matter",
+    "category": "label",
+    "mr": "का आवश्यक?",
+    "en": "Why does it matter?",
+    "metadata": {},
+    "sortOrder": 265
+  },
+  "health.food_sources": {
+    "key": "health.food_sources",
+    "category": "label",
+    "mr": "अन्न स्रोत",
+    "en": "Food sources",
+    "metadata": {},
+    "sortOrder": 266
+  },
+  "health.nutrition_badge": {
+    "key": "health.nutrition_badge",
+    "category": "label",
+    "mr": "पोषण",
+    "en": "Nutrition",
+    "metadata": {},
+    "sortOrder": 267
+  },
+  "settings.kicker": {
+    "key": "settings.kicker",
+    "category": "section",
+    "mr": "सेटिंग्ज",
+    "en": "SETTINGS",
+    "metadata": {},
+    "sortOrder": 270
+  },
+  "settings.title": {
+    "key": "settings.title",
+    "category": "section",
+    "mr": "डेटा आणि पर्याय",
+    "en": "Data & Appearance",
+    "metadata": {},
+    "sortOrder": 271
+  },
+  "settings.subtitle": {
+    "key": "settings.subtitle",
+    "category": "section",
+    "mr": "Shared household settings cloud मध्ये; theme या device वर जतन होतो.",
+    "en": "Shared household settings sync to the cloud; preferences save to this device.",
+    "metadata": {},
+    "sortOrder": 272
+  },
+  "settings.theme_title": {
+    "key": "settings.theme_title",
+    "category": "section",
+    "mr": "थीम",
+    "en": "Theme",
+    "metadata": {},
+    "sortOrder": 273
+  },
+  "settings.theme_desc": {
+    "key": "settings.theme_desc",
+    "category": "section",
+    "mr": "प्रत्येक device वर Light, Dark किंवा System निवडा.",
+    "en": "Select Light, Dark, or System mode for this device.",
+    "metadata": {},
+    "sortOrder": 274
+  },
+  "settings.theme_light": {
+    "key": "settings.theme_light",
+    "category": "action",
+    "mr": "☀️ Light",
+    "en": "☀️ Light",
+    "metadata": {},
+    "sortOrder": 275
+  },
+  "settings.theme_dark": {
+    "key": "settings.theme_dark",
+    "category": "action",
+    "mr": "🌙 Dark",
+    "en": "🌙 Dark",
+    "metadata": {},
+    "sortOrder": 276
+  },
+  "settings.theme_system": {
+    "key": "settings.theme_system",
+    "category": "action",
+    "mr": "🖥️ System",
+    "en": "🖥️ System",
+    "metadata": {},
+    "sortOrder": 277
+  },
+  "settings.lang_title": {
+    "key": "settings.lang_title",
+    "category": "section",
+    "mr": "Language / भाषा",
+    "en": "Language",
+    "metadata": {},
+    "sortOrder": 278
+  },
+  "settings.lang_desc": {
+    "key": "settings.lang_desc",
+    "category": "section",
+    "mr": "मराठी, English किंवा दोन्ही निवडा.",
+    "en": "Choose Marathi, English, or Bilingual mode.",
+    "metadata": {},
+    "sortOrder": 279
+  },
+  "settings.lang_mr": {
+    "key": "settings.lang_mr",
+    "category": "action",
+    "mr": "मराठी",
+    "en": "Marathi",
+    "metadata": {},
+    "sortOrder": 280
+  },
+  "settings.lang_en": {
+    "key": "settings.lang_en",
+    "category": "action",
+    "mr": "English",
+    "en": "English",
+    "metadata": {},
+    "sortOrder": 281
+  },
+  "settings.lang_both": {
+    "key": "settings.lang_both",
+    "category": "action",
+    "mr": "मराठी + English",
+    "en": "Bilingual",
+    "metadata": {},
+    "sortOrder": 282
+  },
+  "settings.lang_both_short": {
+    "key": "settings.lang_both_short",
+    "category": "action",
+    "mr": "दोन्ही",
+    "en": "Both",
+    "metadata": {},
+    "sortOrder": 283
+  },
+  "settings.oil_title": {
+    "key": "settings.oil_title",
+    "category": "section",
+    "mr": "तेल नियोजन",
+    "en": "Oil planning",
+    "metadata": {},
+    "sortOrder": 284
+  },
+  "settings.oil_desc": {
+    "key": "settings.oil_desc",
+    "category": "section",
+    "mr": "Stock आणि monthly planning target वेगळे ठेवा. हा household planning tool आहे; medical limit नाही.",
+    "en": "Keep stock and monthly target separate. This is a household tool, not a clinical limit.",
+    "metadata": {},
+    "sortOrder": 285
+  },
+  "settings.label_oil_stock": {
+    "key": "settings.label_oil_stock",
+    "category": "label",
+    "mr": "सध्याचा साठा (ml)",
+    "en": "Current stock (ml)",
+    "metadata": {},
+    "sortOrder": 286
+  },
+  "settings.label_oil_target": {
+    "key": "settings.label_oil_target",
+    "category": "label",
+    "mr": "मासिक टार्गेट (ml)",
+    "en": "Monthly target (ml)",
+    "metadata": {},
+    "sortOrder": 287
+  },
+  "settings.label_household_size": {
+    "key": "settings.label_household_size",
+    "category": "label",
+    "mr": "कुटुंबातील व्यक्ती संख्या",
+    "en": "Household size",
+    "metadata": {},
+    "sortOrder": 288
+  },
+  "settings.oil_advice_heading": {
+    "key": "settings.oil_advice_heading",
+    "category": "section",
+    "mr": "कुठे कमी करायचे?",
+    "en": "Where to moderate?",
+    "metadata": {},
+    "sortOrder": 289
+  },
+  "settings.oil_advice_text": {
+    "key": "settings.oil_advice_text",
+    "category": "section",
+    "mr": "डीप-फ्राय, जास्त तेलाचा तडका आणि खूप तेलकट gravy आधी कमी करा. मोजून तेल वापरा; योग्य ठिकाणी भाजणे, वाफवणे किंवा pressure cooking वापरा.",
+    "en": "Reduce deep frying, heavy tadka, and oily gravies. Measure oil, and prefer steaming, roasting, or pressure cooking.",
+    "metadata": {},
+    "sortOrder": 290
+  },
+  "settings.btn_save_settings": {
+    "key": "settings.btn_save_settings",
+    "category": "action",
+    "mr": "Settings जतन करा",
+    "en": "Save settings",
+    "metadata": {},
+    "sortOrder": 291
+  },
+  "settings.freq_title": {
+    "key": "settings.freq_title",
+    "category": "section",
+    "mr": "घरगुती नियोजन प्राधान्ये",
+    "en": "Household Planning Preferences",
+    "metadata": {},
+    "sortOrder": 292
+  },
+  "settings.freq_desc": {
+    "key": "settings.freq_desc",
+    "category": "section",
+    "mr": "पनीर मासिक वारंवारता मर्यादा (घरगुती नियोजन प्राधान्य, वैद्यकीय सल्ला नाही).",
+    "en": "Paneer monthly frequency limit (household planning preference, not medical advice).",
+    "metadata": {},
+    "sortOrder": 293
+  },
+  "settings.paneer_planned_label": {
+    "key": "settings.paneer_planned_label",
+    "category": "label",
+    "mr": "पनीर वापर (या महिन्यात):",
+    "en": "Paneer planned (this month):",
+    "metadata": {},
+    "sortOrder": 294
+  },
+  "settings.paneer_limit_desc": {
+    "key": "settings.paneer_limit_desc",
+    "category": "section",
+    "mr": "कॅलेंडर महिन्यात जास्तीत जास्त ५ वेळा पनीरचे जेवण. मर्यादा संपल्यावर इतर शाकाहारी पर्यायांना प्राधान्य दिले जाते.",
+    "en": "Maximum 5 paneer meals per calendar month. When reached, other vegetarian alternates are preferred.",
+    "metadata": {},
+    "sortOrder": 295
+  },
+  "settings.backup_title": {
+    "key": "settings.backup_title",
+    "category": "section",
+    "mr": "बॅकअप",
+    "en": "Backup",
+    "metadata": {},
+    "sortOrder": 296
+  },
+  "settings.backup_desc": {
+    "key": "settings.backup_desc",
+    "category": "section",
+    "mr": "दर काही दिवसांनी JSON backup डाउनलोड करा. नवीन फोनवर Import करून data परत आणता येईल.",
+    "en": "Download JSON backup regularly. Restore on any new device.",
+    "metadata": {},
+    "sortOrder": 297
+  },
+  "settings.btn_export": {
+    "key": "settings.btn_export",
+    "category": "action",
+    "mr": "Backup डाउनलोड",
+    "en": "Export Backup",
+    "metadata": {},
+    "sortOrder": 298
+  },
+  "settings.btn_import": {
+    "key": "settings.btn_import",
+    "category": "action",
+    "mr": "Backup Import",
+    "en": "Import Backup",
+    "metadata": {},
+    "sortOrder": 299
+  },
+  "settings.cloud_title": {
+    "key": "settings.cloud_title",
+    "category": "section",
+    "mr": "क्लाउड जतन",
+    "en": "Cloud sync",
+    "metadata": {},
+    "sortOrder": 300
+  },
+  "settings.cloud_desc": {
+    "key": "settings.cloud_desc",
+    "category": "section",
+    "mr": "Login/OTP लागत नाही. प्रत्येक device ला anonymous session मिळतो आणि shared household data Supabase मध्ये sync होतो.",
+    "en": "No login/OTP required. Each device receives an anonymous session and shared household data syncs to Supabase.",
+    "metadata": {},
+    "sortOrder": 301
+  },
+  "settings.cloud_note": {
+    "key": "settings.cloud_note",
+    "category": "section",
+    "mr": "Health content Supabase मधून येतो; content बदलण्यासाठी frontend code बदलण्याची गरज नाही.",
+    "en": "Health content comes from Supabase; content updates require no code changes.",
+    "metadata": {},
+    "sortOrder": 302
+  },
+  "settings.starter_title": {
+    "key": "settings.starter_title",
+    "category": "section",
+    "mr": "सुरुवातीचा डेटा",
+    "en": "Starter data",
+    "metadata": {},
+    "sortOrder": 303
+  },
+  "settings.starter_desc": {
+    "key": "settings.starter_desc",
+    "category": "section",
+    "mr": "Starter calendar, recipes, shopping आणि prep पुन्हा आणा. Local edits replace होतील.",
+    "en": "Restore starter calendar, recipes, shopping, and prep. Replaces local changes.",
+    "metadata": {},
+    "sortOrder": 304
+  },
+  "settings.btn_reset": {
+    "key": "settings.btn_reset",
+    "category": "action",
+    "mr": "डेटा रीसेट करा",
+    "en": "Reset starter data",
+    "metadata": {},
+    "sortOrder": 305
+  },
+  "meal.view_recipe": {
+    "key": "meal.view_recipe",
+    "category": "action",
+    "mr": "पाककृती पाहा →",
+    "en": "View recipe →",
+    "metadata": {},
+    "sortOrder": 310
+  },
+  "meal.change_slot": {
+    "key": "meal.change_slot",
+    "category": "action",
+    "mr": "बदला:",
+    "en": "Change slot:",
+    "metadata": {},
+    "sortOrder": 311
+  },
+  "meal.family_badge_title": {
+    "key": "meal.family_badge_title",
+    "category": "label",
+    "mr": "कुटुंब",
+    "en": "Family",
+    "metadata": {},
+    "sortOrder": 312
+  },
+  "meal.family_shared_desc": {
+    "key": "meal.family_shared_desc",
+    "category": "label",
+    "mr": "सदस्य · संपूर्ण कुटुंब एकच जेवण",
+    "en": "members · shared meal",
+    "metadata": {},
+    "sortOrder": 313
+  },
+  "meal.alternates_title": {
+    "key": "meal.alternates_title",
+    "category": "label",
+    "mr": "सदस्य बदल",
+    "en": "Member changes",
+    "metadata": {},
+    "sortOrder": 314
+  },
+  "meal.no_alternate": {
+    "key": "meal.no_alternate",
+    "category": "label",
+    "mr": "पर्याय उपलब्ध नाही",
+    "en": "No alternate available",
+    "metadata": {},
+    "sortOrder": 315
+  },
+  "meal.alternate_label": {
+    "key": "meal.alternate_label",
+    "category": "label",
+    "mr": "पर्याय",
+    "en": "Alternate",
+    "metadata": {},
+    "sortOrder": 316
+  },
+  "meal.override_tag": {
+    "key": "meal.override_tag",
+    "category": "label",
+    "mr": "बदल",
+    "en": "Override",
+    "metadata": {},
+    "sortOrder": 317
+  },
+  "meal.frequency_tag": {
+    "key": "meal.frequency_tag",
+    "category": "label",
+    "mr": "पनीर मर्यादा प्राधान्य",
+    "en": "Frequency preference",
+    "metadata": {},
+    "sortOrder": 318
+  },
+  "meal.frequency_tooltip": {
+    "key": "meal.frequency_tooltip",
+    "category": "label",
+    "mr": "पनीर मासिक मर्यादा (५/महिना) पाळण्यासाठी पर्याय",
+    "en": "Selected alternate respecting monthly paneer limit",
+    "metadata": {},
+    "sortOrder": 319
+  },
+  "meal.auto_alternate_tag": {
+    "key": "meal.auto_alternate_tag",
+    "category": "label",
+    "mr": "ऑटो पर्याय",
+    "en": "Auto alternate",
+    "metadata": {},
+    "sortOrder": 320
+  },
+  "meal.freq_warning": {
+    "key": "meal.freq_warning",
+    "category": "label",
+    "mr": "कुटुंब नियोजन प्राधान्यांच्या मर्यादेत योग्य शाकाहारी पर्याय उपलब्ध नाही",
+    "en": "No suitable alternate within household frequency preferences",
+    "metadata": {},
+    "sortOrder": 321
+  },
+  "meal.editor_summary": {
+    "key": "meal.editor_summary",
+    "category": "action",
+    "mr": "सदस्यांचे जेवण बदला",
+    "en": "Change for this day",
+    "metadata": {},
+    "sortOrder": 322
+  },
+  "meal.change_label": {
+    "key": "meal.change_label",
+    "category": "label",
+    "mr": "आजचा बदल",
+    "en": "Change for this day",
+    "metadata": {},
+    "sortOrder": 323
+  },
+  "meal.revert_label": {
+    "key": "meal.revert_label",
+    "category": "action",
+    "mr": "मूळ निवडीवर परत या",
+    "en": "Revert to automatic",
+    "metadata": {},
+    "sortOrder": 324
+  },
+  "meal.balance_mini_title": {
+    "key": "meal.balance_mini_title",
+    "category": "label",
+    "mr": "जेवणाचा समतोल",
+    "en": "Meal balance",
+    "metadata": {},
+    "sortOrder": 325
+  },
+  "meal.prev_day": {
+    "key": "meal.prev_day",
+    "category": "action",
+    "mr": "मागील दिवस",
+    "en": "Previous day",
+    "metadata": {},
+    "sortOrder": 326
+  },
+  "meal.next_day": {
+    "key": "meal.next_day",
+    "category": "action",
+    "mr": "पुढील दिवस",
+    "en": "Next day",
+    "metadata": {},
+    "sortOrder": 327
+  },
+  "meal.back": {
+    "key": "meal.back",
+    "category": "action",
+    "mr": "मागे",
+    "en": "Back",
+    "metadata": {},
+    "sortOrder": 328
+  },
+  "balance.protein_source": {
+    "key": "balance.protein_source",
+    "category": "balance",
+    "mr": "प्रथिनांचा स्रोत",
+    "en": "Protein source",
+    "metadata": {},
+    "sortOrder": 330
+  },
+  "balance.vegetable_component": {
+    "key": "balance.vegetable_component",
+    "category": "balance",
+    "mr": "भाजीपाला घटक",
+    "en": "Vegetable component",
+    "metadata": {},
+    "sortOrder": 331
+  },
+  "balance.pulse_legume": {
+    "key": "balance.pulse_legume",
+    "category": "balance",
+    "mr": "डाळ / कडधान्य",
+    "en": "Pulse / legume",
+    "metadata": {},
+    "sortOrder": 332
+  },
+  "balance.whole_grain": {
+    "key": "balance.whole_grain",
+    "category": "balance",
+    "mr": "पूर्ण धान्याचा घटक",
+    "en": "Whole-grain component",
+    "metadata": {},
+    "sortOrder": 333
+  },
+  "balance.fruit_component": {
+    "key": "balance.fruit_component",
+    "category": "balance",
+    "mr": "फळांचा घटक",
+    "en": "Fruit component",
+    "metadata": {},
+    "sortOrder": 334
+  },
+  "balance.oil_consideration": {
+    "key": "balance.oil_consideration",
+    "category": "balance",
+    "mr": "तेलाचा विचार",
+    "en": "Oil consideration",
+    "metadata": {},
+    "sortOrder": 335
+  },
+  "oil.target_kicker": {
+    "key": "oil.target_kicker",
+    "category": "oil",
+    "mr": "घरचे नियोजन",
+    "en": "HOUSEHOLD TARGET",
+    "metadata": {},
+    "sortOrder": 340
+  },
+  "oil.target_title": {
+    "key": "oil.target_title",
+    "category": "oil",
+    "mr": "खाद्यतेल नियोजन",
+    "en": "Cooking Oil Planning",
+    "metadata": {},
+    "sortOrder": 341
+  },
+  "oil.stock_suffix": {
+    "key": "oil.stock_suffix",
+    "category": "oil",
+    "mr": "साठा",
+    "en": "stock",
+    "metadata": {},
+    "sortOrder": 342
+  },
+  "oil.within_target": {
+    "key": "oil.within_target",
+    "category": "oil",
+    "mr": "टार्गेटच्या आत आहे",
+    "en": "Within target",
+    "metadata": {},
+    "sortOrder": 343
+  },
+  "oil.stock_above": {
+    "key": "oil.stock_above",
+    "category": "oil",
+    "mr": "साठा जास्त आहे",
+    "en": "Stock above target",
+    "metadata": {},
+    "sortOrder": 344
+  },
+  "oil.monthly_desc": {
+    "key": "oil.monthly_desc",
+    "category": "oil",
+    "mr": "मासिक नियोजन टार्गेट",
+    "en": "monthly planning target",
+    "metadata": {},
+    "sortOrder": 345
+  },
+  "oil.household_label": {
+    "key": "oil.household_label",
+    "category": "oil",
+    "mr": "घरगुती",
+    "en": "household",
+    "metadata": {},
+    "sortOrder": 346
+  },
+  "oil.btn_change_target": {
+    "key": "oil.btn_change_target",
+    "category": "action",
+    "mr": "Target बदलायचा? →",
+    "en": "Change target? →",
+    "metadata": {},
+    "sortOrder": 347
+  },
+  "tts.listen": {
+    "key": "tts.listen",
+    "category": "action",
+    "mr": "ऐका",
+    "en": "Listen",
+    "metadata": {},
+    "sortOrder": 350
+  },
+  "tts.stop": {
+    "key": "tts.stop",
+    "category": "action",
+    "mr": "थांबवा",
+    "en": "Stop",
+    "metadata": {},
+    "sortOrder": 351
+  },
+  "tts.speech_today_plate": {
+    "key": "tts.speech_today_plate",
+    "category": "tts",
+    "mr": "आजच्या ताटात:",
+    "en": "What are we eating today:",
+    "metadata": {},
+    "sortOrder": 352
+  },
+  "tts.speech_today_learn": {
+    "key": "tts.speech_today_learn",
+    "category": "tts",
+    "mr": "अन्न → पोषण → शरीर. प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.",
+    "en": "Food to nutrition to body. Understand what each food contributes to the body.",
+    "metadata": {},
+    "sortOrder": 353
+  },
+  "tts.speech_prep_time": {
+    "key": "tts.speech_prep_time",
+    "category": "tts",
+    "mr": "तयारीची वेळ:",
+    "en": "Cooking time:",
+    "metadata": {},
+    "sortOrder": 354
+  },
+  "tts.speech_for_servings": {
+    "key": "tts.speech_for_servings",
+    "category": "tts",
+    "mr": "व्यक्तींसाठी.",
+    "en": "servings.",
+    "metadata": {},
+    "sortOrder": 355
+  },
+  "tts.speech_ingredients": {
+    "key": "tts.speech_ingredients",
+    "category": "tts",
+    "mr": "साहित्य:",
+    "en": "Ingredients:",
+    "metadata": {},
+    "sortOrder": 356
+  },
+  "tts.speech_nutrition": {
+    "key": "tts.speech_nutrition",
+    "category": "tts",
+    "mr": "पोषण:",
+    "en": "Nutrition:",
+    "metadata": {},
+    "sortOrder": 357
+  },
+  "tts.speech_note": {
+    "key": "tts.speech_note",
+    "category": "tts",
+    "mr": "नोंद:",
+    "en": "Note:",
+    "metadata": {},
+    "sortOrder": 358
+  },
+  "tts.speech_nutrition_details": {
+    "key": "tts.speech_nutrition_details",
+    "category": "tts",
+    "mr": "पोषण माहिती:",
+    "en": "Nutrition details:",
+    "metadata": {},
+    "sortOrder": 359
+  },
+  "btn.close": {
+    "key": "btn.close",
+    "category": "action",
+    "mr": "बंद करा",
+    "en": "Close",
+    "metadata": {},
+    "sortOrder": 370
+  },
+  "btn.cancel": {
+    "key": "btn.cancel",
+    "category": "action",
+    "mr": "रद्द करा",
+    "en": "Cancel",
+    "metadata": {},
+    "sortOrder": 371
+  },
+  "btn.save": {
+    "key": "btn.save",
+    "category": "action",
+    "mr": "जतन करा",
+    "en": "Save",
+    "metadata": {},
+    "sortOrder": 372
+  },
+  "msg.saved": {
+    "key": "msg.saved",
+    "category": "message",
+    "mr": "जतन झाले · Saved",
+    "en": "Saved",
+    "metadata": {},
+    "sortOrder": 373
+  },
+  "msg.cloud_sync_failed": {
+    "key": "msg.cloud_sync_failed",
+    "category": "message",
+    "mr": "Cloud sync failed / सेटिंग्ज क्लाउडमध्ये जतन होऊ शकली नाही",
+    "en": "Cloud sync failed",
+    "metadata": {},
+    "sortOrder": 374
+  },
+  "msg.cloud_sync_error": {
+    "key": "msg.cloud_sync_error",
+    "category": "message",
+    "mr": "Cloud sync error · क्लाउड जतन अयशस्वी",
+    "en": "Cloud sync error",
+    "metadata": {},
+    "sortOrder": 375
+  },
+  "msg.cloud_sync_unavailable": {
+    "key": "msg.cloud_sync_unavailable",
+    "category": "message",
+    "mr": "Cloud sync unavailable · क्लाउड sync उपलब्ध नाही. Local data चालू आहे.",
+    "en": "Cloud sync unavailable. Local data active.",
+    "metadata": {},
+    "sortOrder": 376
+  },
+  "msg.recipe_detail_soon": {
+    "key": "msg.recipe_detail_soon",
+    "category": "message",
+    "mr": "पाककृती तपशील लवकरच उपलब्ध होईल",
+    "en": "Recipe detail coming soon",
+    "metadata": {},
+    "sortOrder": 377
+  },
+  "msg.recipe_name_required": {
+    "key": "msg.recipe_name_required",
+    "category": "message",
+    "mr": "नाव आवश्यक आहे",
+    "en": "Recipe name is required",
+    "metadata": {},
+    "sortOrder": 378
+  },
+  "msg.recipe_saved": {
+    "key": "msg.recipe_saved",
+    "category": "message",
+    "mr": "पाककृती जतन झाली",
+    "en": "Recipe saved",
+    "metadata": {},
+    "sortOrder": 379
+  },
+  "msg.meal_updated": {
+    "key": "msg.meal_updated",
+    "category": "message",
+    "mr": "वेळापत्रक बदलले",
+    "en": "Meal updated",
+    "metadata": {},
+    "sortOrder": 380
+  },
+  "msg.added_to_shopping": {
+    "key": "msg.added_to_shopping",
+    "category": "message",
+    "mr": "खरेदी यादीत जोडले",
+    "en": "Added to shopping",
+    "metadata": {},
+    "sortOrder": 381
+  },
+  "msg.item_removed": {
+    "key": "msg.item_removed",
+    "category": "message",
+    "mr": "वस्तू काढली",
+    "en": "Item removed",
+    "metadata": {},
+    "sortOrder": 382
+  },
+  "msg.prep_task_required": {
+    "key": "msg.prep_task_required",
+    "category": "message",
+    "mr": "तयारीचे नाव आवश्यक आहे",
+    "en": "Prep task is required",
+    "metadata": {},
+    "sortOrder": 383
+  },
+  "msg.prep_task_added": {
+    "key": "msg.prep_task_added",
+    "category": "message",
+    "mr": "तयारी जोडली",
+    "en": "Prep task added",
+    "metadata": {},
+    "sortOrder": 384
+  },
+  "msg.prep_task_removed": {
+    "key": "msg.prep_task_removed",
+    "category": "message",
+    "mr": "तयारी काढली",
+    "en": "Prep task removed",
+    "metadata": {},
+    "sortOrder": 385
+  },
+  "msg.settings_saved": {
+    "key": "msg.settings_saved",
+    "category": "message",
+    "mr": "घरची settings जतन झाली",
+    "en": "Household settings saved",
+    "metadata": {},
+    "sortOrder": 386
+  },
+  "msg.backup_restored": {
+    "key": "msg.backup_restored",
+    "category": "message",
+    "mr": "बॅकअप परत आला",
+    "en": "Backup restored",
+    "metadata": {},
+    "sortOrder": 387
+  },
+  "msg.invalid_backup_file": {
+    "key": "msg.invalid_backup_file",
+    "category": "message",
+    "mr": "चुकीची बॅकअप फाइल",
+    "en": "Invalid backup file",
+    "metadata": {},
+    "sortOrder": 388
+  },
+  "msg.confirm_reset_starter": {
+    "key": "msg.confirm_reset_starter",
+    "category": "message",
+    "mr": "सर्व स्थानिक बदल काढायचे?",
+    "en": "Reset local changes?",
+    "metadata": {},
+    "sortOrder": 389
+  }
+};
+
+function mapFrequencyRules(rows) {
+  return (rows || []).filter(x => x.active !== false).map(x => ({
+    id: x.id,
+    key: x.rule_key || x.key,
+    ingredientKey: x.ingredient_key || x.ingredientKey,
+    maxPerCalendarMonth: Number(x.max_per_calendar_month ?? x.maxPerCalendarMonth ?? x.max_times_per_month ?? 5),
+    period: x.period || 'calendar-month',
+    ruleType: x.rule_type || x.ruleType || 'ingredient_frequency',
+    preferenceType: x.preference_type || x.preferenceType || 'household_planning',
+    label: x.label,
+    marathiLabel: x.marathi_label || x.marathiLabel,
+    description: x.description,
+    marathiDescription: x.marathi_description || x.marathiDescription
+  }));
+}
+
 
 const SUPPORTED_UNITS = ['g','kg','ml','L','piece','tsp','tbsp','cup'];
 const UNIT_ALIASES = { count:'piece', piece:'piece', pieces:'piece', pcs:'piece', gram:'g', grams:'g', kilogram:'kg', kilograms:'kg', millilitre:'ml', millilitres:'ml', milliliter:'ml', milliliters:'ml', litre:'L', litres:'L', liter:'L', liters:'L', teaspoon:'tsp', teaspoons:'tsp', tablespoon:'tbsp', tablespoons:'tbsp', cup:'cup', cups:'cup' };
@@ -556,5 +2579,7 @@ function groupMemberAssignments(assignments = [], members = [], recipes = []) {
   };
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments});
-export {SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments};
+if (typeof module !== 'undefined') Object.assign(module.exports, {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules});
+export {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules};
+
+

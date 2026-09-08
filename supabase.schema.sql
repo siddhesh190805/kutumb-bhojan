@@ -330,3 +330,50 @@ create index if not exists meal_assignments_recipe_idx on public.meal_assignment
 create index if not exists meal_assignments_automatic_recipe_idx on public.meal_assignments(automatic_recipe_id);
 create index if not exists meal_assignments_override_recipe_idx on public.meal_assignments(override_recipe_id);
 create index if not exists recipe_ingredients_ingredient_idx on public.recipe_ingredients(ingredient_id);
+
+-- UI Content & Household Frequency Rules
+create table if not exists public.ui_content (
+  id uuid primary key default gen_random_uuid(),
+  content_key text not null unique,
+  category text not null,
+  marathi text not null,
+  english text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists ui_content_category_idx on public.ui_content(category, sort_order);
+
+create table if not exists public.household_frequency_rules (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  rule_key text not null,
+  ingredient_key text not null,
+  max_per_calendar_month integer not null check (max_per_calendar_month >= 0),
+  period text not null default 'calendar-month',
+  rule_type text not null default 'ingredient_frequency',
+  preference_type text not null default 'household_planning',
+  label text not null,
+  marathi_label text not null,
+  description text not null,
+  marathi_description text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (household_id, rule_key)
+);
+create index if not exists household_frequency_rules_household_idx on public.household_frequency_rules(household_id);
+
+alter table public.ui_content enable row level security;
+alter table public.household_frequency_rules enable row level security;
+drop policy if exists ui_content_authenticated_select on public.ui_content;
+create policy ui_content_authenticated_select on public.ui_content for select to authenticated using (active = true);
+drop policy if exists household_frequency_rules_member_all on public.household_frequency_rules;
+create policy household_frequency_rules_member_all on public.household_frequency_rules for all to authenticated using ((select public.is_household_member(household_id))) with check ((select public.is_household_member(household_id)));
+grant select on public.ui_content to authenticated;
+grant select, insert, update, delete on public.household_frequency_rules to authenticated;
+revoke all on public.ui_content from anon;
+revoke all on public.household_frequency_rules from anon;
+

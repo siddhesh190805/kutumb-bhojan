@@ -737,6 +737,36 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--text);
   font-size: 12px;
 }
+.slot-reschedule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.slot-reschedule span {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.slot-reschedule select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+}
 .assignment-controls .tiny {
   flex-shrink: 0;
   white-space: nowrap;
