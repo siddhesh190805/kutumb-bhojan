@@ -4,7 +4,6 @@ app = FastAPI(title="kutumb-bhojan-api")
 
 
 @app.get("/")
-@app.get("/api")
 @app.get("/hello")
 @app.get("/api/hello")
 def hello():
