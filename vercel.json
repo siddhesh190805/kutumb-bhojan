@@ -3,7 +3,8 @@
   "rewrites": [
     { "source": "/manifest.webmanifest", "destination": "/manifest.webmanifest" },
     { "source": "/service-worker.js", "destination": "/service-worker.js" },
-    { "source": "/icon.svg", "destination": "/icon.svg" }
+    { "source": "/icon.svg", "destination": "/icon.svg" },
+    { "source": "/api/hello", "destination": "/api/index.py" }
   ],
   "headers": [
     {

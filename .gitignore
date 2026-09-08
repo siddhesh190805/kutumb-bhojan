@@ -7,3 +7,6 @@ node_modules/
 !.env.example
 *.zip
 supabase/.temp/
+__pycache__/
+*.py[cod]
+.venv/
