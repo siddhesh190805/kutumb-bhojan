@@ -4,14 +4,7 @@
     { "source": "/manifest.webmanifest", "destination": "/manifest.webmanifest" },
     { "source": "/service-worker.js", "destination": "/service-worker.js" },
     { "source": "/icon.svg", "destination": "/icon.svg" },
-    { "source": "/api/hello", "destination": "/api/index.py" },
-    { "source": "/api/planning/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/recipes/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/shopping/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/household/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/nutrition/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/health/(.*)", "destination": "/api/index.py" },
-    { "source": "/api/tts/(.*)", "destination": "/api/index.py" }
+    { "source": "/api/(.*)", "destination": "/api" }
   ],
   "headers": [
     {
