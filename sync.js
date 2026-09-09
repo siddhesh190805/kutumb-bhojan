@@ -12,7 +12,17 @@ function dedupeRecipesByName(recipes) {
 
 function buildRemoteRows(state, householdId) {
   return {
-    meal_entries: state.meals.map(x => ({ household_id: householdId, meal_date: x.date, slot: x.slot, title: x.title, marathi_title: x.marathi, status: x.status, notes: x.notes || null })),
+    meal_entries: state.meals.map(x => ({
+      household_id: householdId,
+      meal_date: x.date,
+      slot: x.slot,
+      title: x.title,
+      marathi_title: x.marathi,
+      status: x.status,
+      notes: x.notes || null,
+      recipe_id: x.recipeId || null,
+      decision_metadata: x.decisionMetadata || x.explanation || null
+    })),
     recipes: dedupeRecipesByName(state.recipes).map(x => ({ household_id: householdId, recipe_key: x.id, name: x.name, marathi_name: x.mr, course: x.course, time_text: x.time, ingredients: x.legacyIngredients || x.ingredients || [], method: x.method, protein: x.protein, fibre: x.fibre, calories: x.cal, oil: x.oil, note: x.note, description:x.description||null, marathi_description:x.marathiDescription||null, meal_category:x.mealCategory||x.course||null, meal_role:x.mealRole||null, servings:Number(x.servings||4), cooking_method:x.cookingMethod||null, dietary_flags:x.dietaryFlags||{}, nutrition_metadata:x.nutrition||{} })),
     family_members: state.members.map((x, i) => ({ household_id: householdId, member_key: x.id, name: x.name, marathi_name: x.mr, age: x.age, sex: x.sex || null, weight_kg: x.weight, height_cm: x.height, activity: x.activity, note: x.note, sort_order: i })),
     shopping_items: state.shopping.map(x => ({ household_id: householdId, item_key: x.id, item: x.item, marathi_item: x.mr, category: x.category, frequency: x.frequency || null, need_to_buy: x.need, purchased: x.purchased, quantity: x.quantity, notes: x.notes || null })),
@@ -25,7 +35,18 @@ function mapRemoteState(data, previous = {}) {
     version: 1,
     updatedAt: new Date().toISOString(),
     members: (data.members || []).map(x => ({ id: x.member_key, name: x.name, mr: x.marathi_name, age: x.age, sex: x.sex, weight: Number(x.weight_kg), height: Number(x.height_cm), activity: x.activity, note: x.note })),
-    meals: (data.meals || []).map(x => ({ id: `${x.meal_date}-${x.slot}`, remoteId:x.id, date: x.meal_date, slot: x.slot, title: x.title, marathi: x.marathi_title || x.title, status: x.status, notes: x.notes })),
+    meals: (data.meals || []).map(x => ({
+      id: `${x.meal_date}-${x.slot}`,
+      remoteId: x.id,
+      date: x.meal_date,
+      slot: x.slot,
+      title: x.title,
+      marathi: x.marathi_title || x.title,
+      status: x.status,
+      notes: x.notes,
+      recipeId: x.recipe_id || null,
+      explanation: x.decision_metadata || null
+    })),
     recipes: dedupeRecipesByName(data.recipes || []).map(x => ({ id: x.recipe_key, remoteId:x.id, name: x.name, mr: x.marathi_name, course: x.course, time: x.time_text, ingredients: x.ingredients || [], legacyIngredients:x.ingredients || [], method: x.method || [], protein: x.protein, fibre: x.fibre, cal: x.calories, oil: x.oil, note: x.note, description:x.description, marathiDescription:x.marathi_description, mealCategory:x.meal_category||x.course, mealRole:x.meal_role, servings:Number(x.servings||4), cookingMethod:x.cooking_method, dietaryFlags:x.dietary_flags||{}, nutrition:x.nutrition_metadata||{} })),
     shopping: (data.shopping || []).map(x => ({ id: x.item_key, item: x.item, mr: x.marathi_item || x.item, category: x.category, frequency: x.frequency, quantity: x.quantity, need: x.need_to_buy, purchased: x.purchased, notes: x.notes })),
     prep: (data.prep || []).map(x => ({ id: x.task_key, task: x.task, mr: x.marathi_task || x.task, date: x.task_date, area: x.category, done: x.done, notes: x.notes })),
@@ -2815,24 +2836,6 @@ function evaluateHardConstraints(recipe, slot, targetDate, state, options = {}) 
     }
   }
 
-  // 4. Consecutive day rule (e.g. paneer shouldn't be served on consecutive days)
-  if (recipeContainsIngredient(recipe, 'paneer') && targetDate && state?.practicalityState?.recentHeavinessByDate) {
-    const prevDateObj = new Date(targetDate);
-    prevDateObj.setDate(prevDateObj.getDate() - 1);
-    const prevDateStr = prevDateObj.toISOString().slice(0, 10);
-    const prevRecord = state.practicalityState.recentHeavinessByDate.get(prevDateStr);
-    if (prevRecord && (prevRecord.hasPaneer || prevRecord.containsPaneer)) {
-      reasons.push(`consecutive paneer meal prohibited: previous day ${prevDateStr} already contained paneer`);
-    }
-    const nextDateObj = new Date(targetDate);
-    nextDateObj.setDate(nextDateObj.getDate() + 1);
-    const nextDateStr = nextDateObj.toISOString().slice(0, 10);
-    const nextRecord = state.practicalityState.recentHeavinessByDate.get(nextDateStr);
-    if (nextRecord && (nextRecord.hasPaneer || nextRecord.containsPaneer)) {
-      reasons.push(`consecutive paneer meal prohibited: next day ${nextDateStr} already contains paneer`);
-    }
-  }
-
   return {
     valid: reasons.length === 0,
     reasons
@@ -2887,6 +2890,18 @@ function evaluateCulinaryAndPracticality(recipe, slot, targetDate, state) {
     if (prevSlotRecipe && prevSlotRecipe.primaryGrain && recipe.primaryGrain && prevSlotRecipe.primaryGrain === recipe.primaryGrain && recipe.primaryGrain !== PRIMARY_GRAINS.NONE) {
       score -= 15;
       penalties.push(`consecutive grain repetition: '${recipe.primaryGrain}' repeated from ${prevDateStr}`);
+    }
+  }
+
+  // Soft paneer spacing preference (diversity heuristic, NOT a hard ban)
+  if (recipeContainsIngredient(recipe, 'paneer') && targetDate && state?.practicalityState?.recentHeavinessByDate) {
+    const prevDateObj = new Date(targetDate);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDateStr = prevDateObj.toISOString().slice(0, 10);
+    const prevRecord = state.practicalityState.recentHeavinessByDate.get(prevDateStr);
+    if (prevRecord && (prevRecord.hasPaneer || prevRecord.containsPaneer)) {
+      score -= 15;
+      penalties.push('soft spacing preference: paneer served yesterday');
     }
   }
 

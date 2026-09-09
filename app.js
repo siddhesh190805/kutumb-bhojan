@@ -221,8 +221,38 @@ async function loadRemote(){
  ]);
  const err=[a,b,c,d,e,f,g,h,i,j,k,rules,l].find(x=>x.error)?.error;
  if(err)throw err;
- const wasSeeded=!a.data?.length;
- if(wasSeeded){ await seedRemote(); return loadRemote(); }
+  const wasSeeded=!a.data?.length;
+  if(wasSeeded){
+   try{
+    const planRes=await fetch('/api/planning/plans',{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({
+      start_date:'2026-09-07',
+      visible_days:7,
+      evaluation_days:30,
+      household_id:remoteHouseholdId
+     })
+    });
+    if(planRes.ok){
+     const planData=await planRes.json();
+     if(planData.plan&&planData.plan.length){
+      state.meals=planData.plan.map(p=>({
+       id:`${p.date}-${p.slot}`,
+       date:p.date,
+       slot:p.slot,
+       title:p.title,
+       marathi:p.marathi_title||mr[p.title]||p.title,
+       recipeId:p.recipe_id,
+       status:'Planned',
+       explanation:p.decision_metadata
+      }));
+     }
+    }
+   }catch(err){console.warn('Initial FastAPI plan generation error, using fallback',err);}
+   await seedRemote();
+   return loadRemote();
+  }
  cloudApplyingRemote=true;
  try{
   if(wasSeeded){
@@ -1152,13 +1182,37 @@ function bind(){
     const reason=b.dataset.applyReason;
     const meal=reasonChangeModalMeal;
     if(!meal)return;
-    const changeRes=proposeMealChange(meal,reason,state,state.recipes);
+    let changeRes=null;
+    try{
+     const resp=await fetch('/api/planning/meal-change',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+       current_meal:{
+        date:meal.date,
+        slot:meal.slot,
+        recipe_id:meal.recipeId,
+        title:meal.title
+       },
+       reason:reason,
+       household_id:remoteHouseholdId
+      })
+     });
+     if(resp.ok){
+      changeRes=await resp.json();
+     }
+    }catch(err){
+     console.warn('FastAPI meal-change request failed, using local fallback',err);
+    }
+    if(!changeRes||!changeRes.recommendation){
+     changeRes=proposeMealChange(meal,reason,state,state.recipes);
+    }
     if(changeRes&&changeRes.recommendation){
      const rec=changeRes.recommendation.recipe;
      meal.title=rec.name;
-     meal.marathi=rec.mr||rec.name;
+     meal.marathi=rec.mr||rec.marathi_name||rec.name;
      meal.recipeId=rec.id;
-     meal.explanation=changeRes.recommendation.explanation;
+     meal.explanation=changeRes.recommendation.explanation||changeRes.recommendation.decision_metadata;
      ensureAutomaticAssignments();
      if(remoteReady&&remoteHouseholdId){
       try{
@@ -1168,7 +1222,9 @@ function bind(){
         slot:meal.slot,
         title:meal.title,
         marathi_title:meal.marathi,
-        status:meal.status
+        status:meal.status,
+        recipe_id:meal.recipeId,
+        decision_metadata:meal.explanation
        },{onConflict:'household_id,meal_date,slot'});
       }catch(err){console.warn('Reschedule sync failed',err);}
      }

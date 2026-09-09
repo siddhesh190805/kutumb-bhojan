@@ -61,6 +61,8 @@ create table if not exists public.meal_entries (
   marathi_title text,
   status text not null default 'Planned',
   notes text,
+  recipe_id uuid references public.recipes(id) on delete set null,
+  decision_metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (household_id, meal_date, slot)

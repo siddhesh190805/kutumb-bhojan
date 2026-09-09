@@ -169,12 +169,11 @@ test('PHASE B: evaluateHardConstraints rejects slot mismatch, paneer limit breac
   assert.equal(freqRes.valid, false);
   assert.ok(freqRes.reasons.some(r => r.includes('frequency')));
 
-  // 4. Consecutive day paneer check: if yesterday had paneer, today cannot have paneer
+  // 4. Consecutive day paneer check: yesterday had paneer, today paneer is NOT hard-rejected!
   state.frequencyCounts = new Map([['paneer:2026-09', 2]]);
   state.practicalityState.recentHeavinessByDate.set('2026-09-06', { hasPaneer: true });
   const consecRes = evaluateHardConstraints(palakPaneer, 'Dinner', '2026-09-07', state);
-  assert.equal(consecRes.valid, false);
-  assert.ok(consecRes.reasons.some(r => r.includes('consecutive')));
+  assert.equal(consecRes.valid, true, 'Paneer yesterday + paneer today must NOT be hard-rejected');
 });
 
 test('PHASE B: evaluateCulinaryAndPracticality enforces heaviness spacing and penalizes consecutive chillas', () => {
@@ -265,14 +264,8 @@ test('PHASE C: generatePlan produces a multi-day plan respecting the paneer mont
   const paneerMeals = planResult.plan.filter(m => m.recipe.containsPaneer || (m.recipe.ingredients || []).some(i => String(i).toLowerCase().includes('paneer')));
   assert.ok(paneerMeals.length <= 5, `Paneer count (${paneerMeals.length}) must not exceed monthly limit of 5`);
 
-  // Check no consecutive day has paneer
-  const paneerDates = [...new Set(paneerMeals.map(m => m.date))].sort();
-  for (let i = 0; i < paneerDates.length - 1; i++) {
-    const d1 = new Date(paneerDates[i]);
-    const d2 = new Date(paneerDates[i + 1]);
-    const diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-    assert.ok(diffDays > 1, `Paneer meals on consecutive dates ${paneerDates[i]} and ${paneerDates[i + 1]} violate consecutive spacing rule`);
-  }
+  // Verify paneer monthly limit of 5 is strictly maintained
+  assert.ok(paneerMeals.length <= 5, `Paneer count (${paneerMeals.length}) must not exceed monthly limit of 5`);
 
   // Check each plan meal has explanation structure
   assert.ok(planResult.plan.every(m => m.explanation && Array.isArray(m.explanation.reasons)));

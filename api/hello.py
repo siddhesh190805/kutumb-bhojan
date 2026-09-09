@@ -1,14 +1,7 @@
-from fastapi import FastAPI
+import sys
+import os
 
-app = FastAPI(title="kutumb-bhojan-api")
+# Ensure project root is on sys.path for Vercel Serverless environment
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-
-@app.get("/")
-@app.get("/hello")
-@app.get("/api/hello")
-def hello():
-    return {
-        "ok": True,
-        "service": "kutumb-bhojan-api",
-        "backend": "fastapi"
-    }
+from backend.app.main import app

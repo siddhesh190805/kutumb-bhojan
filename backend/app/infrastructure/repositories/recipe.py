@@ -1,0 +1,233 @@
+import re
+from typing import Any
+from backend.app.domain.models import Recipe, RecipeIngredient, DietaryFlags, PracticalMetadata, NutritionMetadata
+from backend.app.infrastructure.supabase import SupabaseClient, supabase_client
+
+
+def parse_time_minutes(time_text: str | None) -> int:
+    if not time_text:
+        return 30
+    m = re.search(r"(\d+)", time_text)
+    return int(m.group(1)) if m else 30
+
+
+def enrich_recipe_metadata(recipe: Recipe) -> Recipe:
+    """
+    Enrich recipe with structured dietary flags, practical metadata,
+    and nutrition signals without clinical claims.
+    """
+    combined_text = (
+        f"{recipe.name} {recipe.marathi_name} {' '.join(recipe.ingredients)} {recipe.course} {recipe.cooking_method}"
+    ).lower()
+
+    # 1. Dietary Flags
+    has_egg = bool(re.search(r"\b(egg|eggs|अंड|अंडे|अंडी|भुर्जी)\b", combined_text)) and "paneer" not in recipe.name.lower()
+    if "egg" in recipe.name.lower() or "अंडा" in recipe.marathi_name:
+        has_egg = True
+
+    has_paneer = bool(re.search(r"\b(paneer|पनीर)\b", combined_text))
+    has_legume = bool(re.search(r"\b(dal|chole|rajma|chana|moong|matki|usal|besan|chickpea|sprouts|डाळ|कडधान्य|हरभरा|मूग|मटकी|छोले)\b", combined_text))
+    has_veg = bool(re.search(r"\b(vegetable|vegetables|spinach|palak|cabbage|carrot|cucumber|tomato|bhindi|dudhi|cauliflower|भाजी|भाज्या|पालक|कोबी|गाजर|काकडी|भेंडी|दुधी)\b", combined_text))
+    has_fruit = bool(re.search(r"\b(apple|banana|guava|papaya|pomegranate|mosambi|सफरचंद|केळे|पेरू|पपई|डाळिंब|मोसंबी)\b", combined_text))
+    has_grain = bool(re.search(r"\b(roti|rice|jowar|bhakri|poha|ragi|oats|wheat|पोळी|भात|ज्वारी|भाकरी|पोहे|नाचणी|ओट्स)\b", combined_text))
+
+    recipe.dietary_flags = DietaryFlags(
+        contains_egg=has_egg,
+        vegetarian=not has_egg,
+        vegetables=has_veg,
+        legumes=has_legume,
+        whole_grains=has_grain,
+        fruit=has_fruit,
+        dairy=has_paneer or "curd" in combined_text or "दूध" in combined_text or "दही" in combined_text,
+    )
+
+    # 2. Meal Form
+    name_l = recipe.name.lower()
+    if "chilla" in name_l or "चिल्ला" in recipe.marathi_name:
+        form = "chilla"
+    elif "khichdi" in name_l or "खिचडी" in recipe.marathi_name:
+        form = "khichdi"
+    elif "poha" in name_l or "पोहे" in recipe.marathi_name:
+        form = "poha"
+    elif "dosa" in name_l or "uttapam" in name_l or "डोसा" in recipe.marathi_name or "उत्तपम" in recipe.marathi_name or "adai" in name_l:
+        form = "dosa_uttapam"
+    elif "thalipeeth" in name_l or "dashmi" in name_l or "थालीपीठ" in recipe.marathi_name or "दशमी" in recipe.marathi_name:
+        form = "thalipeeth_dashmi"
+    elif "bhurji" in name_l or "भुर्जी" in recipe.marathi_name:
+        form = "bhurji"
+    elif "rice" in name_l or "rajma rice" in name_l or "भात" in recipe.marathi_name:
+        form = "rice_dish"
+    elif "misal" in name_l or "usal" in name_l or "मिसळ" in recipe.marathi_name or "उसळ" in recipe.marathi_name:
+        form = "misal_usal"
+    elif "snack" in recipe.course.lower() or "chaat" in name_l or "चाट" in recipe.marathi_name or "peanut" in name_l:
+        form = "snack_chaat"
+    else:
+        form = "curry_sabji"
+
+    # 3. Primary Grain
+    if "jowar" in combined_text or "bhakri" in combined_text or "ज्वारी" in combined_text or "भाकरी" in combined_text:
+        grain = "millet"
+    elif "ragi" in combined_text or "नाचणी" in combined_text:
+        grain = "millet"
+    elif "poha" in combined_text or "पोहे" in combined_text:
+        grain = "poha"
+    elif "oat" in combined_text or "ओट्स" in combined_text:
+        grain = "oats"
+    elif "rice" in combined_text or "भात" in combined_text or "khichdi" in combined_text:
+        grain = "rice"
+    elif "roti" in combined_text or "wheat" in combined_text or "पोळी" in combined_text or "गहू" in combined_text:
+        grain = "wheat"
+    else:
+        grain = "none"
+
+    # 4. Primary Protein Source
+    if has_egg:
+        protein = "egg"
+    elif has_paneer:
+        protein = "dairy_paneer"
+    elif "soya" in combined_text or "soy" in combined_text or "टोफू" in combined_text or "tofu" in combined_text:
+        protein = "soy"
+    elif has_legume:
+        protein = "legume"
+    elif "curd" in combined_text or "milk" in combined_text or "दही" in combined_text or "दूध" in combined_text:
+        protein = "dairy_curd"
+    elif "peanut" in combined_text or "almond" in combined_text or "शेंगदाणे" in combined_text:
+        protein = "nuts_seeds"
+    else:
+        protein = "legume"
+
+    # 5. Heaviness / Density
+    if form in ("khichdi", "poha") or "curd" in name_l and len(recipe.ingredients) <= 4:
+        density = "light"
+    elif has_paneer or "chole" in name_l or "rajma" in name_l or "biryani" in name_l:
+        density = "heavy" if (has_paneer and "roti" in combined_text) else "substantial"
+    elif form in ("chilla", "dosa_uttapam", "snack_chaat"):
+        density = "light" if "curd" in name_l or "roasted" in name_l else "moderate"
+    else:
+        density = "moderate"
+
+    # 6. Practical Flags
+    soaking = bool(re.search(r"\b(soaked|overnight|chole|rajma|pesarattu|भिजाव|रात्रभर)\b", combined_text))
+    fermentation = bool(re.search(r"\b(ferment|fermentation|handvo|dosa|idli|आंबव)\b", combined_text))
+    time_min = parse_time_minutes(recipe.time_text)
+
+    recipe.practical_metadata = PracticalMetadata(
+        meal_density=density,
+        meal_form=form,
+        primary_grain=grain,
+        primary_protein_source=protein,
+        cooking_burden="low" if time_min <= 20 else "moderate" if time_min <= 35 else "high",
+        time_minutes=time_min,
+        soaking_required=soaking,
+        fermentation_required=fermentation,
+        batch_prep_compatible=form in ("chilla", "khichdi", "curry_sabji"),
+    )
+
+    # 7. Nutrition Metadata
+    recipe.nutrition_metadata = NutritionMetadata(
+        protein_source=protein,
+        fibre_contribution="high" if (has_legume and has_veg) else "moderate",
+        whole_grain=grain in ("millet", "wheat", "oats", "poha"),
+        vegetables=has_veg,
+        fruits=has_fruit,
+        legumes=has_legume,
+        egg=has_egg,
+        dairy=has_paneer or "curd" in combined_text,
+    )
+
+    return recipe
+
+
+class RecipeRepository:
+    def __init__(self, client: SupabaseClient = supabase_client):
+        self.client = client
+        self._cache: dict[str, list[Recipe]] = {}
+
+    def get_recipes(
+        self,
+        household_id: str,
+        auth_token: str | None = None,
+        refresh: bool = False,
+    ) -> list[Recipe]:
+        if not refresh and household_id in self._cache:
+            return self._cache[household_id]
+
+        rows = self.client.get(
+            "recipes",
+            {"household_id": f"eq.{household_id}"},
+            auth_token=auth_token,
+        )
+        if not rows:
+            return []
+
+        # Also get recipe_ingredients if present
+        try:
+            ri_rows = self.client.get(
+                "recipe_ingredients",
+                {"household_id": f"eq.{household_id}", "order": "sort_order"},
+                auth_token=auth_token,
+            )
+        except Exception:
+            ri_rows = []
+
+        ri_by_recipe: dict[str, list[RecipeIngredient]] = {}
+        for r in ri_rows:
+            rec_id = str(r.get("recipe_id"))
+            ri_by_recipe.setdefault(rec_id, []).append(
+                RecipeIngredient(
+                    ingredient_id=str(r.get("ingredient_id")),
+                    ingredient_key=str(r.get("ingredient_key") or ""),
+                    quantity=float(r.get("quantity", 0)),
+                    unit=str(r.get("unit", "g")),
+                    display_text=r.get("display_text"),
+                    preparation=r.get("preparation"),
+                    sort_order=int(r.get("sort_order", 0)),
+                )
+            )
+
+        recipes = []
+        for r in rows:
+            rid = str(r["id"])
+            ingredients_raw = r.get("ingredients") or []
+            if isinstance(ingredients_raw, str):
+                ingredients_raw = [ingredients_raw]
+
+            method_raw = r.get("method") or []
+            if isinstance(method_raw, str):
+                method_raw = [method_raw]
+
+            recipe = Recipe(
+                id=rid,
+                recipe_key=r.get("recipe_key"),
+                name=r.get("name", ""),
+                marathi_name=r.get("marathi_name", ""),
+                course=r.get("course") or "Lunch/Dinner",
+                meal_category=r.get("meal_category") or r.get("course") or "Lunch/Dinner",
+                meal_role=r.get("meal_role") or "main",
+                servings=float(r.get("servings") or 4),
+                time_text=r.get("time_text") or "30 min",
+                cooking_method=r.get("cooking_method") or "Stovetop",
+                description=r.get("description"),
+                marathi_description=r.get("marathi_description"),
+                ingredients=ingredients_raw,
+                structured_ingredients=ri_by_recipe.get(rid, []),
+                method=method_raw,
+                note=r.get("note"),
+            )
+            enriched = enrich_recipe_metadata(recipe)
+            recipes.append(enriched)
+
+        self._cache[household_id] = recipes
+        return recipes
+
+    def get_recipe_by_id(
+        self,
+        household_id: str,
+        recipe_id: str,
+        auth_token: str | None = None,
+    ) -> Recipe | None:
+        all_recipes = self.get_recipes(household_id, auth_token=auth_token)
+        for r in all_recipes:
+            if r.id == recipe_id or r.recipe_key == recipe_id or r.name.lower() == recipe_id.lower():
+                return r
+        return None
