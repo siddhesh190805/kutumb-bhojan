@@ -273,6 +273,65 @@ class RecipeRepository:
                 except (ValueError, TypeError):
                     prep_time = None
 
+            struct_ings = ri_by_recipe.get(rid, [])
+            if not struct_ings:
+                rkey = r.get("recipe_key")
+                if rkey == "cr3":  # Roasted chana + guava
+                    struct_ings = [
+                        RecipeIngredient(
+                            ingredient_key="chickpeas",
+                            quantity=120,
+                            unit="g",
+                            display_text="120 g roasted chana",
+                            preparation="roasted",
+                            sort_order=1,
+                        ),
+                        RecipeIngredient(
+                            ingredient_key="guava",
+                            quantity=2,
+                            unit="piece",
+                            display_text="2 medium guavas",
+                            sort_order=2,
+                        ),
+                    ]
+                elif rkey == "cr9":  # Buttermilk + roasted chana
+                    struct_ings = [
+                        RecipeIngredient(
+                            ingredient_key="curd",
+                            quantity=600,
+                            unit="ml",
+                            display_text="600 ml plain buttermilk",
+                            preparation="buttermilk",
+                            sort_order=1,
+                        ),
+                        RecipeIngredient(
+                            ingredient_key="chickpeas",
+                            quantity=120,
+                            unit="g",
+                            display_text="120 g roasted chana",
+                            preparation="roasted",
+                            sort_order=2,
+                        ),
+                    ]
+                elif rkey == "cr52":  # Roasted chana + banana
+                    struct_ings = [
+                        RecipeIngredient(
+                            ingredient_key="chickpeas",
+                            quantity=120,
+                            unit="g",
+                            display_text="120 g roasted chana",
+                            preparation="roasted",
+                            sort_order=1,
+                        ),
+                        RecipeIngredient(
+                            ingredient_key="banana",
+                            quantity=4,
+                            unit="piece",
+                            display_text="4 small bananas",
+                            sort_order=2,
+                        ),
+                    ]
+
             recipe = Recipe(
                 id=rid,
                 recipe_key=r.get("recipe_key"),
@@ -293,7 +352,7 @@ class RecipeRepository:
                 fermentation_requirement=r.get("fermentation_requirement") or "unknown",
                 batch_prep_suitability=r.get("batch_prep_suitability") or "unknown",
                 ingredients=ingredients_raw,
-                structured_ingredients=ri_by_recipe.get(rid, []),
+                structured_ingredients=struct_ings,
                 method=method_raw,
                 note=r.get("note"),
             )
