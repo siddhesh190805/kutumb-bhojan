@@ -1,5 +1,7 @@
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
+from uuid import UUID
 from pydantic import BaseModel, Field
 
 
@@ -7,15 +9,107 @@ from pydantic import BaseModel, Field
 SupportedUnit = Literal["g", "kg", "ml", "L", "piece", "tsp", "tbsp", "cup"]
 
 
+@dataclass(frozen=True)
+class CanonicalIngredient:
+    id: UUID | str
+    canonical_key: str
+    display_name_en: str
+    display_name_mr: str | None = None
+    aliases: tuple[str, ...] = ()
+    food_groups: tuple[str, ...] = ()
+    protein_contribution: str = "unknown"
+    fibre_contribution: str = "unknown"
+    carbohydrate_role: str = "unknown"
+    fat_contribution: str = "unknown"
+    fat_quality: str = "unknown"
+    legume_identity: str | None = None
+    grain_identity: str | None = None
+    vegetable_identity: str | None = None
+    vegetable_category: str = "unknown"
+    fruit_identity: str | None = None
+    seed_identity: str | None = None
+    nut_identity: str | None = None
+    whole_grain_or_millet: bool = False
+    soaking_requirement: str = "unknown"
+    advance_preparation: str = "unknown"
+    provenance: str = "authored"
+    metadata_status: str = "unknown"
+
+
+@dataclass(frozen=True)
+class DerivedRecipeFoodProfile:
+    food_groups: frozenset[str]
+    legume_identities: frozenset[str]
+    grain_identities: frozenset[str]
+    vegetable_identities: frozenset[str]
+    fruit_identities: frozenset[str]
+    seed_identities: frozenset[str]
+    nut_identities: frozenset[str]
+    has_whole_grain_or_millet: bool
+    protein_contributions: frozenset[str]
+    fibre_contributions: frozenset[str]
+    carbohydrate_roles: frozenset[str]
+    fat_contributions: frozenset[str]
+    fat_qualities: frozenset[str]
+    provenance: str = "derived"
+
+
 class Ingredient(BaseModel):
     id: str | None = None
     canonical_key: str
     name: str
     marathi_name: str
+    display_name_en: str | None = None
+    display_name_mr: str | None = None
     aliases: list[str] = Field(default_factory=list)
     category: str | None = None
     default_unit: str = "g"
     active: bool = True
+    food_groups: list[str] = Field(default_factory=list)
+    protein_contribution: str = "unknown"
+    fibre_contribution: str = "unknown"
+    carbohydrate_role: str = "unknown"
+    fat_contribution: str = "unknown"
+    fat_quality: str = "unknown"
+    legume_identity: str | None = None
+    grain_identity: str | None = None
+    vegetable_identity: str | None = None
+    vegetable_category: str = "unknown"
+    fruit_identity: str | None = None
+    seed_identity: str | None = None
+    nut_identity: str | None = None
+    whole_grain_or_millet: bool = False
+    soaking_requirement: str = "unknown"
+    advance_preparation: str = "unknown"
+    provenance: str = "authored"
+    metadata_status: str = "unknown"
+
+    def to_canonical(self) -> CanonicalIngredient:
+        return CanonicalIngredient(
+            id=self.id or self.canonical_key,
+            canonical_key=self.canonical_key,
+            display_name_en=self.display_name_en or self.name,
+            display_name_mr=self.display_name_mr or self.marathi_name,
+            aliases=tuple(self.aliases),
+            food_groups=tuple(self.food_groups),
+            protein_contribution=self.protein_contribution,
+            fibre_contribution=self.fibre_contribution,
+            carbohydrate_role=self.carbohydrate_role,
+            fat_contribution=self.fat_contribution,
+            fat_quality=self.fat_quality,
+            legume_identity=self.legume_identity,
+            grain_identity=self.grain_identity,
+            vegetable_identity=self.vegetable_identity,
+            vegetable_category=self.vegetable_category,
+            fruit_identity=self.fruit_identity,
+            seed_identity=self.seed_identity,
+            nut_identity=self.nut_identity,
+            whole_grain_or_millet=self.whole_grain_or_millet,
+            soaking_requirement=self.soaking_requirement,
+            advance_preparation=self.advance_preparation,
+            provenance=self.provenance,
+            metadata_status=self.metadata_status,
+        )
 
 
 class RecipeIngredient(BaseModel):
@@ -75,6 +169,12 @@ class Recipe(BaseModel):
     cooking_method: str | None = "Stovetop"
     description: str | None = None
     marathi_description: str | None = None
+    meal_form: str | None = None
+    preparation_time_minutes: int | None = None
+    preparation_burden: str = "unknown"
+    soaking_requirement: str = "unknown"
+    fermentation_requirement: str = "unknown"
+    batch_prep_suitability: str = "unknown"
     ingredients: list[str] = Field(default_factory=list)
     structured_ingredients: list[RecipeIngredient] = Field(default_factory=list)
     legacy_unmapped: list[str] = Field(default_factory=list)
@@ -83,6 +183,7 @@ class Recipe(BaseModel):
     dietary_flags: DietaryFlags = Field(default_factory=DietaryFlags)
     nutrition_metadata: NutritionMetadata = Field(default_factory=NutritionMetadata)
     practical_metadata: PracticalMetadata = Field(default_factory=PracticalMetadata)
+    food_profile: DerivedRecipeFoodProfile | None = None
 
 
 class FamilyMember(BaseModel):
