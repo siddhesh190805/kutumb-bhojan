@@ -160,3 +160,87 @@ def test_recipe_derivation_with_curated_catalog():
     assert "main" in profile.protein_contributions  # From moong_dal
     assert "meaningful" in profile.fibre_contributions  # From moong_dal
     assert "primary" in profile.carbohydrate_roles  # From rice
+
+
+def test_structured_snack_recipes_resolve_to_canonical_identities():
+    """Verify that cr3, cr9, and cr52 are mapped cleanly to canonical ingredients with real portions."""
+    catalog = [
+        CanonicalIngredient(id=f"id-{k}", **v)
+        for k, v in CANONICAL_40_INGREDIENTS_CURATION.items()
+    ]
+    
+    # cr3: Roasted chana + guava
+    cr3 = Recipe(
+        id="cr3",
+        recipe_key="cr3",
+        name="Roasted chana + guava",
+        marathi_name="भाजलेले चणे + पेरू",
+        meal_form="snack_chaat",
+        structured_ingredients=[
+            RecipeIngredient(ingredient_key="chickpeas", quantity=120.0, unit="g", preparation="roasted"),
+            RecipeIngredient(ingredient_key="guava", quantity=2.0, unit="piece", preparation="fresh"),
+        ],
+    )
+    p3 = derive_recipe_food_profile(cr3, catalog)
+    assert "legume_pulse" in p3.food_groups
+    assert "fruit" in p3.food_groups
+    assert "chana" in p3.legume_identities
+    assert "guava" in p3.fruit_identities
+
+    # cr9: Buttermilk + roasted chana
+    cr9 = Recipe(
+        id="cr9",
+        recipe_key="cr9",
+        name="Buttermilk + roasted chana",
+        marathi_name="ताक + भाजलेले चणे",
+        meal_form="snack_chaat",
+        structured_ingredients=[
+            RecipeIngredient(ingredient_key="curd", quantity=600.0, unit="ml", preparation="buttermilk"),
+            RecipeIngredient(ingredient_key="chickpeas", quantity=120.0, unit="g", preparation="roasted"),
+        ],
+    )
+    p9 = derive_recipe_food_profile(cr9, catalog)
+    assert "dairy" in p9.food_groups
+    assert "legume_pulse" in p9.food_groups
+    assert "chana" in p9.legume_identities
+
+    # cr52: Roasted chana + banana
+    cr52 = Recipe(
+        id="cr52",
+        recipe_key="cr52",
+        name="Roasted chana + banana",
+        marathi_name="भाजलेले चणे + केळे",
+        meal_form="snack_chaat",
+        structured_ingredients=[
+            RecipeIngredient(ingredient_key="chickpeas", quantity=120.0, unit="g", preparation="roasted"),
+            RecipeIngredient(ingredient_key="banana", quantity=4.0, unit="piece", preparation="fresh"),
+        ],
+    )
+    p52 = derive_recipe_food_profile(cr52, catalog)
+    assert "fruit" in p52.food_groups
+    assert "legume_pulse" in p52.food_groups
+    assert "banana" in p52.fruit_identities
+
+
+def test_no_name_based_heuristic_leakage_for_unknown_ingredients():
+    """Verify that unknown ingredient containing 'dal' or 'भाजी' does not accidentally get classified."""
+    catalog = [
+        CanonicalIngredient(id=f"id-{k}", **v)
+        for k, v in CANONICAL_40_INGREDIENTS_CURATION.items()
+    ]
+    
+    # Recipe with an unmapped custom ingredient
+    mystery_recipe = Recipe(
+        id="rec-mystery",
+        name="Mystery dish",
+        marathi_name="गूढ डिश",
+        structured_ingredients=[
+            RecipeIngredient(ingredient_key="mystery_dal_bhaji", quantity=100.0, unit="g"),
+        ],
+    )
+    p = derive_recipe_food_profile(mystery_recipe, catalog)
+    assert not p.legume_identities
+    assert not p.vegetable_identities
+    assert not p.grain_identities
+    assert "unknown" in p.protein_contributions or not p.protein_contributions
+

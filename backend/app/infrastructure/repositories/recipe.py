@@ -176,7 +176,11 @@ def enrich_recipe_metadata(recipe: Recipe) -> Recipe:
         time_minutes=time_min,
         soaking_required=soaking,
         fermentation_required=fermentation,
-        batch_prep_compatible=form in ("chilla", "khichdi", "curry_sabji") or recipe.batch_prep_suitability in ("high", "moderate"),
+        batch_prep_compatible=(
+            recipe.batch_prep_suitability in ("high", "moderate")
+            if recipe.batch_prep_suitability and recipe.batch_prep_suitability != "unknown"
+            else form in ("chilla", "khichdi", "curry_sabji")
+        ),
     )
 
     # 7. Nutrition Metadata

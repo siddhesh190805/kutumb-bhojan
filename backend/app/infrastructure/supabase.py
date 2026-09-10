@@ -140,6 +140,24 @@ class SupabaseClient:
                 raise RuntimeError(f"Supabase POST {table} failed: {resp.status_code} {resp.text}")
             return resp.json() if resp.text else []
 
+    def patch(
+        self,
+        table: str,
+        params: dict[str, Any],
+        data: dict[str, Any],
+        auth_token: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Update rows in a Supabase table."""
+        url = f"{self.base_url}/rest/v1/{table}"
+        headers = self._get_auth_headers(auth_token)
+        headers["Content-Type"] = "application/json"
+        headers["Prefer"] = "return=representation"
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.patch(url, json=data, params=params, headers=headers)
+            if resp.status_code not in (200, 204):
+                raise RuntimeError(f"Supabase PATCH {table} failed: {resp.status_code} {resp.text}")
+            return resp.json() if resp.text else []
+
     def rpc(
         self,
         function_name: str,
