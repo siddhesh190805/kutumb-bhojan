@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, buildShoppingFromAssignments, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient, CANONICAL_UI_CONTENT, createContentProvider, mapUiContent, mapFrequencyRules, createPlanningState, generatePlan, proposeMealChange, MEAL_CHANGE_REASONS } from './sync.js';
+import { REMOTE_TABLES, buildRemoteRows, mapRemoteState, mapHealthTips, mapHealthTargets, mapHouseholdSettings, dedupeRecipesByName, mapIngredientCatalog, mapRecipeIngredients, mapMealAssignments, buildStructuredRecipe, mapDietaryRules, buildAutomaticAssignments, applyDayLevelOverride, revertDayLevelOverride, evaluateMealBalance, getNutritionEducation, getRecipeNutritionConcepts, selectAutomaticAlternate, DEFAULT_DIETARY_RULES, groupMemberAssignments, DEFAULT_FREQUENCY_RULES, countIngredientMonthlyOccurrences, getHouseholdFrequencyStatus, recipeContainsIngredient, CANONICAL_UI_CONTENT, createContentProvider, mapUiContent, mapFrequencyRules, MEAL_CHANGE_REASONS } from './sync.js';
 import { tts } from './tts.js';
 
 const SUPABASE_URL='https://wcwwvyreefkrqchfteqp.supabase.co';
@@ -12,132 +12,29 @@ const LANGUAGE_STORAGE='kutumb-bhojan-language-v1';
 const slots=['Breakfast','Lunch','Snack','Dinner'];
 const slotMr={Breakfast:'नाश्ता',Lunch:'दुपारचे जेवण',Snack:'अल्पोपहार',Dinner:'रात्रीचे जेवण'};
 const icon={Breakfast:'🍳',Lunch:'🍛',Snack:'🥜',Dinner:'🍽️'};
-const family=[
-{id:'vikas',name:'Vikas',mr:'विकास',age:50,weight:70,height:171,activity:'Highly active / खूप सक्रिय',note:'काही डाळ खाल्ल्यानंतर लाल चट्टे येत असल्याची नोंद. ट्रिगर निश्चित होईपर्यंत संशयित डाळ मुद्दाम वाढवू नका.'},
-{id:'namrata',name:'Namrata',mr:'नम्रता',age:40,weight:65,height:155,activity:'Active household work / घरकामात सक्रिय',note:'दूध, दही, अंडी, पनीर आणि कडधान्यांची विविधता ठेवा.'},
-{id:'tejas',name:'Tejas',mr:'तेजस',age:14,weight:50,height:171,activity:'Highly active / खूप सक्रिय',note:'वाढीचे वय. प्रौढ weight-loss targets वापरू नका. सतत थकवा/वारंवार आजार असल्यास pediatrician.'},
-{id:'siddhesh',name:'Siddhesh',mr:'सिद्धेश',age:21,weight:64,height:182,activity:'Sedentary + calisthenics / बसून काम + व्यायाम',note:'व्यायामाच्या दिवशी पुरेसे जेवण आणि recovery. Protein powder optional आहे.'}
-];
 const mr={
 'Moong vegetable chilla + curd':'मूग भाजी चिल्ला + दही','Moong-paneer chilla':'मूग-पनीर चिल्ला','Lobia curry + roti + bhindi + guava':'चवळीची भाजी + पोळी + भेंडी + पेरू','Roasted chana + guava':'भाजलेला हरभरा + पेरू','Paneer vegetable curry + roti + cucumber':'पनीर भाजी + पोळी + काकडी','Chana usal + jowar bhakri + cabbage-carrot koshimbir':'हरभरा उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर','Tofu bhurji + roti + tomato-cucumber':'टोफू भुर्जी + पोळी + टोमॅटो-काकडी','Vegetable uttapam + sambar':'भाजी उत्तपम + सांबार','Rajma rice + cucumber-onion':'राजमा भात + काकडी-कांदा','Buttermilk + roasted chana':'ताक + भाजलेला हरभरा','Jowar bhakri + matki usal + cauliflower':'ज्वारी भाकरी + मटकी उसळ + फुलकोबी','Egg bhurji + roti':'अंडा भुर्जी + पोळी','Mixed bean curry + roti + dudhi':'मिश्र कडधान्य भाजी + पोळी + दुधी','Paneer chaat + pomegranate':'पनीर चाट + डाळिंब','Vegetable moong khichdi + curd + carrot-cucumber':'भाजी मूग खिचडी + दही + गाजर-काकडी','Besan-paneer chilla':'बेसन-पनीर चिल्ला','Chole + roti + cabbage-peas + apple':'छोले + पोळी + कोबी-वाटाणा + सफरचंद','Milk + banana + peanut powder':'दूध + केळे + शेंगदाणा पूड','Palak paneer + roti + cucumber':'पालक पनीर + पोळी + काकडी','Handvo + curd':'हांडवो + दही','Bharli vangi + jowar bhakri + curd + cucumber':'भरली वांगी + ज्वारी भाकरी + दही + काकडी','Chana chaat + mosambi':'हरभरा चाट + मोसंबी','Soy-paneer keema + roti + cabbage':'सोया-पनीर कीमा + पोळी + कोबी','Methi dashmi + curd + banana':'मेथी दशमी + दही + केळे','Matki misal + pav + cucumber-onion':'मटकी मिसळ + पाव + काकडी-कांदा','Curd + papaya + flax':'दही + पपई + जवस','Paneer vegetable tikka + roti + tomato-cucumber':'पनीर भाजी टिक्का + पोळी + टोमॅटो-काकडी','Peanuts + banana':'शेंगदाणे + केळे','Paneer bhurji + roti + spinach':'पनीर भुर्जी + पोळी + पालक','Ragi dosa + sambar':'नाचणी डोसा + सांबार','Chana usal + roti + cauliflower-carrot':'हरभरा उसळ + पोळी + फुलकोबी-गाजर','Sprouted moong chaat':'मोड आलेल्या मूगाची चाट','Egg bhurji + roti + dudhi':'अंडा भुर्जी + पोळी + दुधी','Vegetable poha + peanuts + curd':'भाजी पोहे + शेंगदाणे + दही','Rajma rice + cucumber + papaya':'राजमा भात + काकडी + पपई','Pesarattu + peanut chutney':'पेसरट्टू + शेंगदाणा चटणी','Mixed bean curry + roti + cabbage-carrot':'मिश्र कडधान्य भाजी + पोळी + कोबी-गाजर','Tofu vegetable curry + roti + cucumber':'टोफू भाजी + पोळी + काकडी','Besan vegetable chilla + curd':'बेसन भाजी चिल्ला + दही','Chole + roti + bhindi + apple':'छोले + पोळी + भेंडी + सफरचंद','Mixed-dal adai + tomato chutney':'मिश्र डाळ अडई + टोमॅटो चटणी','Bharli vangi + jowar bhakri + curd':'भरली वांगी + ज्वारी भाकरी + दही','Protein thalipeeth + curd':'प्रोटीन थालीपीठ + दही','Sprouts poha + curd':'मोड आलेले पोहे + दही','Chana usal + jowar bhakri + dudhi':'हरभरा उसळ + ज्वारी भाकरी + दुधी','Curd + banana + pumpkin seeds':'दही + केळे + भोपळ्याच्या बिया','Tofu bhurji + roti + cucumber-tomato':'टोफू भुर्जी + पोळी + काकडी-टोमॅटो','Rajma rice + cabbage-carrot':'राजमा भात + कोबी-गाजर','Sprouted moong chaat + cucumber':'मोड आलेल्या मूगाची चाट + काकडी','Egg bhurji + roti + bhindi':'अंडा भुर्जी + पोळी + भेंडी','Mixed bean curry + roti + dudhi + apple':'मिश्र कडधान्य भाजी + पोळी + दुधी + सफरचंद','Chole + roti + cauliflower-carrot + papaya':'छोले + पोळी + फुलकोबी-गाजर + पपई','Roasted chana + banana':'भाजलेला हरभरा + केळे','Soy-paneer keema + roti + cabbage salad':'सोया-पनीर कीमा + पोळी + कोबी कोशिंबीर','Matki usal + jowar bhakri + cabbage-carrot koshimbir':'मटकी उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर'};
 
-function makeMeals(){
-  const planningState = createPlanningState({
-    household: { id: 'hh-canonical-001' },
-    members: family,
-    frequencyRules: DEFAULT_FREQUENCY_RULES,
-    startDate: '2026-09-07',
-    visibleDays: 7,
-    evaluationDays: 30
-  });
-
-  const generated = generatePlan(planningState, recipeObj, {
-    days: 30,
-    startDate: '2026-09-07'
-  });
-
-  if (generated && generated.plan && generated.plan.length) {
-    return generated.plan.map(p => ({
-      id: `${p.date}-${p.slot}`,
-      date: p.date,
-      slot: p.slot,
-      title: p.title,
-      marathi: p.marathiTitle || mr[p.title] || p.title,
-      recipeId: p.recipeId,
-      status: 'Planned',
-      explanation: p.explanation
-    }));
-  }
-  return [];
-}
-const recipes=[
-['Moong Vegetable Chilla','मूग भाजी चिल्ला','Breakfast','20 min','10 ml','~11 g','~4 g','~220 kcal',['200 g soaked moong dal','100 g vegetables','20 g besan','ginger, cumin, salt','10 ml oil'],['Blend soaked moong with little water.','Mix vegetables, besan and seasoning.','Cook 4 medium chillas with measured oil.'],'Serve with 100–150 g curd per adult portion.'],
-['Besan Vegetable Chilla + Curd','बेसन भाजी चिल्ला + दही','Breakfast','15 min','10 ml','~10 g','~4 g','~230 kcal',['160 g besan','150 g vegetables','400 g curd','spices','10 ml oil'],['Whisk besan with water and vegetables.','Cook thin chillas.','Serve with curd.'],'Keep batter medium-thick.'],
-['Pesarattu + Peanut Coriander Chutney','पेसरट्टू + शेंगदाणा-कोथिंबीर चटणी','Breakfast','30 min','10 ml','~12 g','~5 g','~270 kcal',['240 g soaked whole green gram','40 g peanuts','coriander','ginger, cumin','10 ml oil'],['Blend soaked moong.','Spread thin and cook.','Blend peanut-coriander chutney.'],'Soak overnight; batch batter.'],
-['Ragi Dosa + Sambar','नाचणी डोसा + सांबार','Breakfast','30 min','10 ml','~10 g','~6 g','~300 kcal',['160 g ragi flour','80 g rice flour','600 g vegetable sambar','10 ml oil'],['Mix batter and rest.','Cook dosas.','Serve with vegetable-rich sambar.'],'Fermentation optional.'],
-['Vegetable Poha + Peanuts + Curd','भाजी पोहे + शेंगदाणे + दही','Breakfast','15 min','10 ml','~9 g','~4 g','~300 kcal',['240 g poha','50 g peanuts','200 g vegetables','400 g curd'],['Rinse poha.','Cook vegetables and poha.','Finish with peanuts and curd.'],'Measure peanuts.'],
-['Paneer Bhurji + Roti','पनीर भुर्जी + पोळी','Breakfast','20 min','10 ml','~20 g','~5 g','~390 kcal',['400 g paneer','200 g tomato-onion','8 rotis','10 ml oil'],['Cook onion-tomato.','Add crumbled paneer.','Serve with rotis.'],'Egg-bhurji alternative.'],
-['Mixed-Dal Adai','मिश्र डाळ अडई','Breakfast','30 min','10 ml','~13 g','~6 g','~300 kcal',['250 g mixed dals','ginger, chilli, curry leaves','vegetables','10 ml oil'],['Soak dals.','Blend coarse.','Cook thick pancakes.'],'Use varied dals.'],
-['Protein Thalipeeth','प्रोटीन थालीपीठ','Breakfast','30 min','15 ml','~12 g','~6 g','~330 kcal',['120 g jowar flour','80 g besan','40 g ground peanuts','vegetables'],['Mix into dough.','Pat portions.','Cook with measured oil.'],'Serve with curd.'],
-['Matki Usal','मटकी उसळ','Lunch/Dinner','30 min','10 ml','~13 g','~7 g','~280 kcal',['250 g dry matki, sprouted','200 g tomato-onion','spices','10 ml oil'],['Pressure-cook sprouts.','Prepare masala.','Combine and simmer.'],'Batch-friendly protein anchor.'],
-['Chole + Roti','छोले + पोळी','Lunch/Dinner','35 min','12 ml','~15 g','~8 g','~390 kcal',['280 g dry chickpeas','onion-tomato','8 rotis','12 ml oil'],['Pressure-cook soaked chickpeas.','Cook masala.','Simmer together.'],'Soak and batch-cook.'],
-['Rajma Masala + Rice','राजमा मसाला + भात','Lunch/Dinner','40 min','12 ml','~14 g','~8 g','~430 kcal',['280 g dry rajma','250 g cooked rice','onion-tomato','12 ml oil'],['Pressure-cook rajma.','Cook masala.','Simmer and serve.'],'Measure rice portion.'],
-['Lobia Curry + Roti','चवळीची भाजी + पोळी','Lunch/Dinner','30 min','10 ml','~14 g','~8 g','~390 kcal',['250 g dry lobia','onion-tomato','8 rotis','10 ml oil'],['Pressure-cook lobia.','Cook masala.','Combine and serve.'],'Rotate with other legumes.'],
-['Palak Paneer','पालक पनीर','Lunch/Dinner','30 min','12 ml','~20 g','~5 g','~360 kcal',['400 g paneer','500 g spinach','tomato, ginger','12 ml oil'],['Blanch and blend spinach.','Cook aromatics.','Add paneer and spinach.'],'Pair with roti and cucumber.'],
-['Vegetable Moong Khichdi + Curd','भाजी मूग खिचडी + दही','Lunch/Dinner','30 min','10 ml','~12 g','~6 g','~350 kcal',['180 g rice','120 g moong dal','300 g vegetables','400 g curd'],['Rinse rice and dal.','Pressure-cook with vegetables.','Serve with curd.'],'Comfort meal.'],
-['Jowar Bhakri + Matki Usal + Dudhi','ज्वारी भाकरी + मटकी उसळ + दुधी','Lunch/Dinner','35 min','10 ml','~15 g','~9 g','~420 kcal',['8 jowar bhakri','700 g matki usal','500 g dudhi'],['Prepare bhakri.','Cook dudhi.','Serve with usal.'],'Weekend/batch prep.'],
-['Matki Misal','मटकी मिसळ','Lunch/Dinner','35 min','12 ml','~15 g','~9 g','~430 kcal',['500 g matki usal','200 g measured farsan','4 pav','onion/coriander'],['Prepare usal.','Assemble bowls.','Serve with measured farsan and pav.'],'Keep farsan measured.'],
-['Paneer Vegetable Tikka','पनीर भाजी टिक्का','Lunch/Dinner','30 min','10 ml','~20 g','~5 g','~350 kcal',['400 g paneer','300 g capsicum/onion/tomato','curd and spices','10 ml oil'],['Marinate.','Skewer/tray-bake.','Cook until lightly charred.'],'Weekend meal.'],
-['Sprouted Moong Chaat','मोड आलेल्या मूगाची चाट','Snack','15 min','5 ml','~9 g','~6 g','~180 kcal',['400 g steamed sprouted moong','100 g tomato-cucumber','lemon','10 g peanuts'],['Steam sprouts.','Mix vegetables, lemon and peanuts.'],'Do not use raw sprouts for vulnerable family members.'],
-['Paneer Chaat','पनीर चाट','Snack','10 min','0 ml','~14 g','~2 g','~220 kcal',['300 g paneer','tomato, cucumber, coriander','lemon and spices'],['Cube paneer.','Mix and season.'],'Use fresh safely stored paneer.'],
-['Curd Papaya Flax Bowl','दही पपई जवस बाऊल','Snack','5 min','0 ml','~8 g','~4 g','~190 kcal',['600 g plain curd','400 g papaya','20 g ground flaxseed'],['Add papaya to curd.','Top with ground flaxseed.'],'Keep flax ground and refrigerated.'],
-['Roasted Chana + Banana','भाजलेला हरभरा + केळे','Snack','2 min','0 ml','~7 g','~5 g','~210 kcal',['120 g roasted chana','4 small bananas'],['Portion roasted chana.','Serve with one banana each.'],'Portable snack.'],
-['Buttermilk + Roasted Chana','ताक + भाजलेला हरभरा','Snack','5 min','0 ml','~7 g','~4 g','~150 kcal',['600 ml buttermilk','120 g roasted chana','cumin, coriander'],['Season buttermilk.','Serve with roasted chana.'],'Useful on hot afternoons.'],
-['Egg Bhurji + Roti','अंडा भुर्जी + पोळी','Breakfast/Dinner','15 min','8 ml','~18 g','~4 g','~350 kcal',['8 eggs','200 g onion-tomato','8 rotis','8 ml oil'],['Whisk eggs.','Cook masala.','Scramble eggs fully.','Serve with rotis.'],'Egg-free alternative: paneer bhurji.']
-];
-
-const calendarRecipeData=[
-['Moong vegetable chilla + curd','मूग भाजी चिल्ला + दही','Breakfast','20 min','10 ml','~12 g','~4 g','~280 kcal',['200 g soaked moong dal','100 g grated carrot, spinach and onion','20 g besan','400 g plain curd','cumin, ginger, salt','10 ml oil'],['Blend soaked moong with a little water.','Mix vegetables, besan and seasoning into the batter.','Cook 4 medium chillas with measured oil.','Serve with plain curd.'],'Home-style weekday breakfast; adjust portion for each family member.'],
-['Moong-paneer chilla','मूग-पनीर चिल्ला','Breakfast','25 min','10 ml','~15 g','~4 g','~320 kcal',['200 g soaked moong dal','150 g crumbled paneer','100 g grated carrot, onion and coriander','ginger, cumin, salt','10 ml oil'],['Blend soaked moong into a thick batter.','Fold in vegetables and half the paneer.','Cook 4 chillas with measured oil.','Top with remaining paneer.'],'Use fresh paneer; keep batter suitable for a soft home-style chilla.'],
-['Lobia curry + roti + bhindi + guava','चवळीची भाजी + पोळी + भेंडी + पेरू','Lunch/Dinner','40 min','12 ml','~17 g','~9 g','~500 kcal',['250 g dry lobia, soaked','8 whole-wheat rotis','400 g bhindi','1 guava','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked lobia until soft.','Cook tomato-onion masala and simmer lobia.','Stir-fry sliced bhindi with measured oil.','Serve with rotis and one guava portion.'],'Batch-cook lobia on the weekend; keep bhindi lightly cooked.'],
-['Roasted chana + guava','भाजलेला हरभरा + पेरू','Snack','5 min','0 ml','~8 g','~7 g','~210 kcal',['120 g roasted chana','2 medium guavas'],['Portion roasted chana into 4 servings.','Wash and cut guava.','Serve together.'],'Quick snack; use a smaller or larger portion according to hunger.'],
-['Paneer vegetable curry + roti + cucumber','पनीर भाजी + पोळी + काकडी','Lunch/Dinner','30 min','12 ml','~20 g','~6 g','~470 kcal',['400 g paneer','300 g tomato, onion, capsicum and peas','8 whole-wheat rotis','2 cucumbers','12 ml oil','ginger, cumin, turmeric, coriander powder, salt'],['Cook onion, tomato and spices.','Add chopped vegetables and cook until just tender.','Add paneer and simmer briefly.','Serve with rotis and cucumber.'],'Simple home-style curry; avoid overcooking paneer.'],
-['Chana usal + jowar bhakri + cabbage-carrot koshimbir','हरभरा उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर','Lunch/Dinner','40 min','12 ml','~18 g','~11 g','~520 kcal',['250 g dry kala chana, soaked','4 jowar bhakri','250 g cabbage','150 g carrot','lemon, coriander','200 g tomato-onion','12 ml oil','cumin, turmeric, goda masala, salt'],['Pressure-cook soaked chana until tender.','Cook tomato-onion masala and simmer chana into usal.','Prepare cabbage-carrot koshimbir with lemon and coriander.','Serve with jowar bhakri.'],'Cook chana thoroughly; keep the koshimbir fresh and lightly seasoned.'],
-['Tofu bhurji + roti + tomato-cucumber','टोफू भुर्जी + पोळी + टोमॅटो-काकडी','Lunch/Dinner','25 min','10 ml','~18 g','~5 g','~430 kcal',['350 g firm tofu, crumbled','8 whole-wheat rotis','200 g tomato-onion','2 cucumbers','1 tomato','10 ml oil','turmeric, cumin, coriander, salt'],['Press tofu and crumble it.','Cook onion-tomato masala with spices.','Add tofu and cook until moisture reduces.','Serve with rotis and tomato-cucumber.'],'A soy-based option without soy-chunk texture.'],
-['Vegetable uttapam + sambar','भाजी उत्तपम + सांबार','Breakfast','30 min','10 ml','~12 g','~6 g','~330 kcal',['300 g dosa batter','150 g finely chopped onion, tomato and capsicum','500 g vegetable sambar','10 ml oil','coriander, cumin, salt'],['Spread thick uttapam batter on a hot tawa.','Top with vegetables and cook both sides with measured oil.','Serve with hot vegetable-rich sambar.'],'Use fermented dosa batter when available; keep uttapam soft rather than crisp.'],
-['Rajma rice + cucumber-onion','राजमा भात + काकडी-कांदा','Lunch/Dinner','45 min','12 ml','~17 g','~9 g','~500 kcal',['280 g dry rajma, soaked','320 g cooked rice','200 g tomato-onion','1 cucumber','1 onion','12 ml oil','ginger, cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked rajma until completely tender.','Prepare tomato-onion masala and simmer rajma.','Serve with measured cooked rice.','Add fresh cucumber-onion on the side.'],'Soak and batch-cook rajma to reduce weekday effort.'],
-['Buttermilk + roasted chana','ताक + भाजलेला हरभरा','Snack','5 min','0 ml','~8 g','~5 g','~170 kcal',['600 ml plain buttermilk','120 g roasted chana','cumin, coriander, salt'],['Whisk buttermilk with cumin and coriander.','Portion roasted chana.','Serve chilled or at room temperature.'],'Useful quick afternoon snack, especially in warm weather.'],
-['Jowar bhakri + matki usal + cauliflower','ज्वारी भाकरी + मटकी उसळ + फुलकोबी','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~500 kcal',['4 jowar bhakri','250 g dry matki, sprouted','400 g cauliflower','200 g tomato-onion','12 ml oil','cumin, turmeric, goda masala, salt'],['Pressure-cook sprouted matki until tender.','Cook masala and simmer matki into usal.','Steam or lightly stir-fry cauliflower.','Serve with jowar bhakri.'],'Batch-friendly Maharashtrian-style meal.'],
-['Egg bhurji + roti','अंडा भुर्जी + पोळी','Breakfast/Dinner','20 min','8 ml','~19 g','~4 g','~390 kcal',['8 eggs','8 whole-wheat rotis','200 g onion-tomato','100 g spinach','8 ml oil','turmeric, cumin, coriander, salt'],['Whisk eggs.','Cook onion-tomato and spinach with spices.','Add eggs and scramble until fully cooked.','Serve with rotis.'],'Cook eggs fully; egg-free option can be paneer bhurji.'],
-['Mixed bean curry + roti + dudhi','मिश्र कडधान्य भाजी + पोळी + दुधी','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~500 kcal',['280 g mixed beans, soaked','8 whole-wheat rotis','500 g dudhi','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked mixed beans until tender.','Cook tomato-onion masala and simmer beans.','Cook chopped dudhi until soft.','Serve with rotis.'],'Use a mix such as chana, lobia and whole moong; cook thoroughly.'],
-['Paneer chaat + pomegranate','पनीर चाट + डाळिंब','Snack','10 min','0 ml','~15 g','~3 g','~250 kcal',['300 g paneer','1 pomegranate','150 g cucumber and tomato','lemon, coriander','roasted cumin, salt'],['Cube paneer and chop vegetables.','Mix with lemon and spices.','Top with pomegranate arils.'],'Fresh, quick snack with no deep frying.'],
-['Vegetable moong khichdi + curd + carrot-cucumber','भाजी मूग खिचडी + दही + गाजर-काकडी','Lunch/Dinner','35 min','10 ml','~14 g','~7 g','~420 kcal',['180 g rice','120 g moong dal','300 g mixed vegetables','400 g plain curd','150 g carrot and cucumber','10 ml oil','turmeric, cumin, salt'],['Rinse rice and moong dal.','Pressure-cook with vegetables, turmeric and water.','Finish with measured oil tempering if desired.','Serve with curd statistics and carrot-cucumber.'],'Soft home-style khichdi; easy on busy days.'],
-['Besan-paneer chilla','बेसन-पनीर चिल्ला','Breakfast','20 min','10 ml','~16 g','~5 g','~330 kcal',['160 g besan','150 g paneer','100 g grated carrot, onion and spinach','ginger, cumin, salt','10 ml oil'],['Whisk besan into a smooth batter.','Add vegetables and crumbled paneer.','Cook 4 chillas with measured oil.','Serve hot.'],'Keep batter medium-thick so it cooks evenly.'],
-['Chole + roti + cabbage-peas + apple','छोले + पोळी + कोबी-वाटाणा + सफरचंद','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~520 kcal',['280 g dry chickpeas, soaked','8 whole-wheat rotis','350 g cabbage','100 g peas','1 apple','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook soaked chickpeas.','Prepare masala and simmer chole.','Cook cabbage and peas until just tender.','Serve with rotis and apple.'],'Home-style chole; keep the vegetable side lightly spiced.'],
-['Milk + banana + peanut powder','दूध + केळे + शेंगदाणा पूड','Snack','5 min','0 ml','~10 g','~3 g','~250 kcal',['600 ml milk','4 bananas','40 g roasted peanut powder'],['Warm or serve milk as preferred.','Slice one banana per serving.','Sprinkle measured peanut powder.'],'Quick snack; avoid adding sugar routinely.'],
-['Palak paneer + roti + cucumber','पालक पनीर + पोळी + काकडी','Lunch/Dinner','35 min','12 ml','~21 g','~7 g','~500 kcal',['400 g paneer','500 g spinach','8 whole-wheat rotis','2 cucumbers','200 g tomato-onion','12 ml oil','ginger, cumin, turmeric, salt'],['Blanch spinach briefly and blend.','Cook onion-tomato with spices.','Add spinach and simmer.','Add paneer and serve with rotis and cucumber.'],'Keep spinach bright and paneer lightly cooked.'],
-['Handvo + curd','हांडवो + दही','Breakfast','45 min','15 ml','~14 g','~5 g','~360 kcal',['220 g rice and mixed dal handvo batter','150 g grated dudhi','400 g plain curd','ginger, sesame, cumin, salt','15 ml oil'],['Mix handvo batter with grated dudhi and seasoning.','Pour into a thick tawa or oven-safe pan.','Cook covered until set and browned, turning if needed.','Serve with curd.'],'Use fermented mixed rice-dal batter for traditional texture; weekend-friendly.'],
-['Bharli vangi + jowar bhakri + curd + cucumber','भरली वांगी + ज्वारी भाकरी + दही + काकडी','Lunch/Dinner','45 min','15 ml','~16 g','~8 g','~500 kcal',['8 small brinjals','80 g roasted peanut powder','30 g sesame','4 jowar bhakri','400 g curd','2 cucumbers','200 g onion-tomato','15 ml oil','goda masala, turmeric, coriander, salt'],['Slit brinjals and fill with peanut-sesame masala.','Cook covered with measured oil until tender.','Serve with jowar bhakri and curd.','Add cucumber on the side.'],'Traditional Maharashtrian home-style preparation; keep stuffing moderate.'],
-['Chana chaat + mosambi','हरभरा चाट + मोसंबी','Snack','10 min','0 ml','~8 g','~7 g','~220 kcal',['240 g boiled kala chana','150 g tomato-cucumber-onion','2 mosambi','lemon, coriander','roasted cumin, salt'],['Mix cooked chana with chopped vegetables.','Season with lemon, cumin and coriander.','Serve with mosambi segments.'],'Use fully cooked chana rather than raw sprouts.'],
-['Soy-paneer keema + roti + cabbage','सोया-पनीर कीमा + पोळी + कोबी','Lunch/Dinner','30 min','12 ml','~22 g','~8 g','~500 kcal',['120 g dry soy granules','200 g paneer','8 whole-wheat rotis','300 g finely chopped cabbage','200 g tomato-onion','12 ml oil','ginger, cumin, turmeric, coriander powder, salt'],['Soak soy granules in hot water, rinse and squeeze well.','Cook tomato-onion masala.','Add minced soy and crumbled paneer; cook until dry.','Serve with rotis and lightly cooked cabbage.'],'Uses minced soy rather than soy chunks for a softer keema texture.'],
-['Methi dashmi + curd + banana','मेथी दशमी + दही + केळे','Breakfast','35 min','12 ml','~13 g','~5 g','~380 kcal',['220 g whole-wheat atta','80 g besan','50 g chopped fresh methi','400 g plain curd','4 bananas','12 ml oil','turmeric, cumin, chilli, salt'],['Mix atta, besan, methi and spices into a soft dough.','Roll thin dashmi and cook on a tawa with measured oil.','Serve with curd and one banana per serving.'],'Traditional home-style flatbread; keep oil measured.'],
-['Matki misal + pav + cucumber-onion','मटकी मिसळ + पाव + काकडी-कांदा','Lunch/Dinner','40 min','12 ml','~18 g','~9 g','~500 kcal',['500 g cooked sprouted matki usal','4 pav','200 g onion','1 cucumber','100 g measured farsan','200 g tomato-onion masala','12 ml oil','lemon, coriander, goda masala, salt'],['Cook sprouted matki until tender and make a moderately spiced usal.','Assemble bowls with usal and a measured amount of farsan.','Serve with pav, cucumber and onion.'],'Keep farsan measured; the usal remains the main protein component.'],
-['Curd + papaya + flax','दही + पपई + जवस','Snack','5 min','0 ml','~8 g','~5 g','~200 kcal',['600 g plain curd','400 g papaya','20 g ground flaxseed'],['Cube papaya.','Add to curd.','Top with ground flaxseed.'],'Keep ground flax refrigerated and use fresh curd.'],
-['Paneer vegetable tikka + roti + tomato-cucumber','पनीर भाजी टिक्का + पोळी + टोमॅटो-काकडी','Lunch/Dinner','35 min','10 ml','~21 g','~6 g','~480 kcal',['400 g paneer','300 g capsicum, onion and tomato','8 whole-wheat rotis','200 g tomato-cucumber','100 g curd','10 ml oil','turmeric, cumin, chilli, coriander, salt'],['Marinate paneer and vegetables in curd and spices.','Cook on tawa or bake until lightly browned.','Serve with rotis and fresh tomato-cucumber.'],'Home-style tawa/baked tikka; no deep frying.'],
-['Peanuts + banana','शेंगदाणे + केळे','Snack','3 min','0 ml','~8 g','~3 g','~220 kcal',['80 g roasted peanuts','4 bananas'],['Portion peanuts.','Serve one banana per person.'],'Simple portable snack; portion peanuts rather than eating from the packet.'],
-['Paneer bhurji + roti + spinach','पनीर भुर्जी + पोळी + पालक','Lunch/Dinner','25 min','10 ml','~21 g','~6 g','~470 kcal',['400 g paneer','8 whole-wheat rotis','300 g spinach','200 g tomato-onion','10 ml oil','cumin, turmeric, coriander, salt'],['Cook tomato-onion masala and crumble in paneer.','Cook spinach separately with light seasoning.','Serve bhurji with rotis and spinach.'],'Fast weekday protein-rich meal.'],
-['Ragi dosa + sambar','नाचणी डोसा + सांबार','Breakfast','30 min','10 ml','~11 g','~6 g','~320 kcal',['160 g ragi flour','80 g rice flour','500 g vegetable sambar','10 ml oil','cumin, salt'],['Mix ragi and rice flour with water and rest.','Spread thin dosas and cook with measured oil.','Serve with vegetable-rich sambar.'],'Fermentation optional; batch batter saves weekday time.'],
-['Chana usal + roti + cauliflower-carrot','हरभरा उसळ + पोळी + फुलकोबी-गाजर','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~500 kcal',['250 g dry kala chana, soaked','8 whole-wheat rotis','300 g cauliflower','150 g carrot','200 g tomato-onion','12 ml oil','cumin, turmeric, goda masala, salt'],['Pressure-cook chana until tender.','Prepare masala and simmer chana.','Cook cauliflower and carrot until just tender.','Serve with rotis.'],'A practical weekday variation of chana usal.'],
-['Sprouted moong chaat','मोड आलेल्या मूगाची चाट','Snack','15 min','5 ml','~9 g','~6 g','~180 kcal',['400 g steamed sprouted moong','150 g tomato-cucumber','10 g peanuts','lemon, coriander','5 ml oil','roasted cumin, salt'],['Steam sprouts until safely cooked.','Mix with vegetables, peanuts and lemon.','Season lightly and serve.'],'Do not serve raw sprouts; steam/cook them first.'],
-['Egg bhurji + roti + dudhi','अंडा भुर्जी + पोळी + दुधी','Lunch/Dinner','30 min','10 ml','~19 g','~6 g','~450 kcal',['8 eggs','8 whole-wheat rotis','400 g dudhi','200 g onion-tomato','10 ml oil','cumin, turmeric, coriander, salt'],['Cook chopped dudhi until tender.','Cook onion-tomato masala.','Add beaten eggs and scramble fully.','Serve with rotis and dudhi.'],'Cook eggs fully; keep dudhi soft and lightly seasoned.'],
-['Vegetable poha + peanuts + curd','भाजी पोहे + शेंगदाणे + दही','Breakfast','20 min','10 ml','~10 g','~5 g','~330 kcal',['240 g poha','50 g peanuts','200 g onion, carrot and peas','400 g plain curd','10 ml oil','mustard, cumin, turmeric, lemon, salt'],['Rinse and drain poha.','Cook vegetables with tempering.','Add poha and season.','Finish with peanuts and serve with curd.'],'Measure peanuts and oil; easy daily breakfast.'],
-['Rajma rice + cucumber + papaya','राजमा भात + काकडी + पपई','Lunch/Dinner','45 min','12 ml','~17 g','~9 g','~520 kcal',['280 g dry rajma, soaked','320 g cooked rice','1 cucumber','300 g papaya','200 g tomato-onion','12 ml oil','ginger, cumin, turmeric, salt'],['Pressure-cook rajma until completely tender.','Cook tomato-onion masala and simmer rajma.','Serve with measured rice.','Add cucumber and papaya on the side.'],'Keep the fruit as a separate simple side portion.'],
-['Pesarattu + peanut chutney','पेसरट्टू + शेंगदाणा चटणी','Breakfast','30 min','10 ml','~13 g','~5 g','~300 kcal',['240 g soaked whole green gram','40 g roasted peanuts','coriander','ginger, cumin, lemon, salt','10 ml oil'],['Blend soaked moong into a smooth batter.','Spread thin pesarattu and cook with measured oil.','Grind peanuts, coriander, lemon and spices into chutney.','Serve together.'],'Soak overnight and make batter in batches.'],
-['Mixed bean curry + roti + cabbage-carrot','मिश्र कडधान्य भाजी + पोळी + कोबी-गाजर','Lunch/Dinner','40 min','12 ml','~18 g','~11 g','~500 kcal',['280 g mixed beans, soaked','8 whole-wheat rotis','250 g cabbage','150 g carrot','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook mixed beans until tender.','Prepare tomato-onion masala and simmer beans.','Make a quick cabbage-carrot stir-fry.','Serve with rotis.'],'Use thoroughly cooked mixed beans.'],
-['Tofu vegetable curry + roti + cucumber','टोफू भाजी + पोळी + काकडी','Lunch/Dinner','30 min','12 ml','~18 g','~6 g','~470 kcal',['350 g firm tofu','300 g tomato, onion, capsicum and peas','8 whole-wheat rotis','2 cucumbers','12 ml oil','ginger, cumin, turmeric, coriander powder, salt'],['Press and cube tofu.','Cook tomato-onion masala and vegetables.','Add tofu and simmer briefly.','Serve with rotis and cucumber.'],'A soft soy option without chunky soy texture.'],
-['Besan vegetable chilla + curd','बेसन भाजी चिल्ला + दही','Breakfast','15 min','10 ml','~11 g','~5 g','~300 kcal',['160 g besan','150 g grated carrot, onion and spinach','400 g plain curd','ginger, cumin, salt','10 ml oil'],['Whisk besan with water and vegetables.','Cook thin chillas with measured oil.','Serve with curd.'],'Keep batter medium-thick and cook through.'],
-['Chole + roti + bhindi + apple','छोले + पोळी + भेंडी + सफरचंद','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~520 kcal',['280 g dry chickpeas, soaked','8 whole-wheat rotis','400 g bhindi','1 apple','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook chickpeas.','Prepare masala and simmer chole.','Cook bhindi with measured oil.','Serve with rotis and apple.'],'Batch-cook chickpeas to shorten weekday preparation.'],
-['Mixed-dal adai + tomato chutney','मिश्र डाळ अडई + टोमॅटो चटणी','Breakfast','35 min','10 ml','~14 g','~6 g','~330 kcal',['250 g mixed dals, soaked','150 g tomato','ginger, chilli, curry leaves','100 g vegetables','10 ml oil','salt'],['Soak and coarsely blend mixed dals.','Mix in vegetables and seasoning.','Cook thick adai on a tawa with measured oil.','Cook tomato, ginger and chilli and blend into chutney.'],'Use varied dals; cook the adai thoroughly.'],
-['Bharli vangi + jowar bhakri + curd','भरली वांगी + ज्वारी भाकरी + दही','Lunch/Dinner','45 min','15 ml','~16 g','~8 g','~480 kcal',['8 small brinjals','80 g roasted peanut powder','30 g sesame','4 jowar bhakri','400 g curd','200 g onion-tomato','15 ml oil','goda masala, turmeric, coriander, salt'],['Fill slit brinjals with peanut-sesame masala.','Cook covered with measured oil until tender.','Serve with jowar bhakri and curd.'],'Traditional home-style preparation; keep stuffing moderate.'],
-['Protein thalipeeth + curd','प्रोटीन थालीपीठ + दही','Breakfast','30 min','15 ml','~13 g','~6 g','~350 kcal',['120 g jowar flour','80 g besan','40 g ground peanuts','150 g grated vegetables','400 g plain curd','15 ml oil','cumin, sesame, salt'],['Mix flours, peanuts, vegetables and seasoning into a soft dough.','Pat 4 thalipeeth portions on a tawa.','Cook with measured oil until both sides are done.','Serve with curd.'],'Traditional-style mixed flour thalipeeth with added protein foods.'],
-['Sprouts poha + curd','मोड आलेले पोहे + दही','Breakfast','25 min','10 ml','~11 g','~6 g','~340 kcal',['180 g poha','200 g cooked sprouted moong','150 g onion, carrot and peas','400 g plain curd','10 ml oil','mustard, cumin, turmeric, lemon, salt'],['Rinse poha.','Steam or pressure-cook sprouts until tender.','Cook vegetables and tempering, then add poha and sprouts.','Serve with curd.'],'Cook sprouts before mixing; good for batch-prepped weekday breakfast.'],
-['Chana usal + jowar bhakri + dudhi','हरभरा उसळ + ज्वारी भाकरी + दुधी','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~500 kcal',['250 g dry kala chana, soaked','4 jowar bhakri','500 g dudhi','200 g tomato-onion','12 ml oil','cumin, turmeric, goda masala, salt'],['Pressure-cook chana until tender.','Prepare masala and simmer into usal.','Cook dudhi until soft.','Serve with jowar bhakri.'],'Batch-friendly Maharashtrian-style meal.'],
-['Curd + banana + pumpkin seeds','दही + केळे + भोपळ्याच्या बिया','Snack','5 min','0 ml','~9 g','~4 g','~230 kcal',['600 g plain curd','4 bananas','30 g pumpkin seeds'],['Slice bananas.','Divide curd into 4 bowls.','Top with banana and measured pumpkin seeds.'],'No added sugar needed for routine use.'],
-['Tofu bhurji + roti + cucumber-tomato','टोफू भुर्जी + पोळी + काकडी-टोमॅटो','Lunch/Dinner','25 min','10 ml','~18 g','~6 g','~440 kcal',['350 g firm tofu, crumbled','8 whole-wheat rotis','1 cucumber','2 tomatoes','200 g onion','10 ml oil','turmeric, cumin, coriander, salt'],['Cook onion and spices.','Add crumbled tofu and cook until dry.','Serve with rotis and fresh cucumber-tomato.'],'Press tofu well for a bhurji-like texture.'],
-['Rajma rice + cabbage-carrot','राजमा भात + कोबी-गाजर','Lunch/Dinner','45 min','12 ml','~17 g','~10 g','~520 kcal',['280 g dry rajma, soaked','320 g cooked rice','250 g cabbage','150 g carrot','200 g tomato-onion','12 ml oil','ginger, cumin, turmeric, salt'],['Pressure-cook rajma until completely tender.','Cook masala and simmer rajma.','Stir-fry cabbage and carrot lightly.','Serve with measured rice.'],'A practical vegetable variation of rajma rice.'],
-['Sprouted moong chaat + cucumber','मोड आलेल्या मूगाची चाट + काकडी','Snack','15 min','5 ml','~9 g','~7 g','~190 kcal',['400 g steamed sprouted moong','2 cucumbers','100 g tomato','10 g peanuts','lemon, coriander','5 ml oil','roasted cumin, salt'],['Steam sprouts until cooked.','Mix with chopped cucumber, tomato and peanuts.','Season with lemon and cumin.'],'Cook sprouts before serving.'],
-['Egg bhurji + roti + bhindi','अंडा भुर्जी + पोळी + भेंडी','Lunch/Dinner','30 min','10 ml','~19 g','~6 g','~460 kcal',['8 eggs','8 whole-wheat rotis','400 g bhindi','200 g onion-tomato','10 ml oil','cumin, turmeric, coriander, salt'],['Cook bhindi with measured oil.','Prepare onion-tomato masala.','Add beaten eggs and scramble fully.','Serve with rotis and bhindi.'],'Cook eggs fully and keep bhindi lightly crisp.'],
-['Mixed bean curry + roti + dudhi + apple','मिश्र कडधान्य भाजी + पोळी + दुधी + सफरचंद','Lunch/Dinner','40 min','12 ml','~18 g','~10 g','~520 kcal',['280 g mixed beans, soaked','8 whole-wheat rotis','500 g dudhi','1 apple','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook mixed beans until tender.','Cook tomato-onion masala and simmer beans.','Cook dudhi until soft.','Serve with rotis and apple.'],'Cook mixed beans thoroughly and keep fruit as a separate side.'],
-['Chole + roti + cauliflower-carrot + papaya','छोले + पोळी + फुलकोबी-गाजर + पपई','Lunch/Dinner','40 min','12 ml','~18 g','~11 g','~530 kcal',['280 g dry chickpeas, soaked','8 whole-wheat rotis','300 g cauliflower','150 g carrot','300 g papaya','200 g tomato-onion','12 ml oil','cumin, turmeric, coriander powder, salt'],['Pressure-cook chickpeas.','Prepare masala and simmer chole.','Cook cauliflower and carrot until tender.','Serve with rotis and papaya.'],'Keep papaya as a simple fresh side.'],
-['Roasted chana + banana','भाजलेला हरभरा + केळे','Snack','3 min','0 ml','~7 g','~5 g','~210 kcal',['120 g roasted chana','4 small bananas'],['Portion roasted chana.','Serve one banana per person.'],'Portable and quick.'],
-['Soy-paneer keema + roti + cabbage salad','सोया-पनीर कीमा + पोळी + कोबी कोशिंबीर','Lunch/Dinner','30 min','12 ml','~22 g','~9 g','~510 kcal',['120 g dry soy granules','200 g paneer','8 whole-wheat rotis','300 g finely shredded cabbage','200 g tomato-onion','12 ml oil','lemon, coriander, cumin, turmeric, salt'],['Soak soy granules in hot water, rinse and squeeze.','Cook tomato-onion masala.','Add minced soy and crumbled paneer and cook until dry.','Toss cabbage with lemon and coriander and serve with rotis.'],'Minced soy gives a softer texture than soy chunks.'],
-['Matki usal + jowar bhakri + cabbage-carrot koshimbir','मटकी उसळ + ज्वारी भाकरी + कोबी-गाजर कोशिंबीर','Lunch/Dinner','40 min','12 ml','~18 g','~11 g','~510 kcal',['250 g dry matki, sprouted','4 jowar bhakri','250 g cabbage','150 g carrot','200 g tomato-onion','12 ml oil','lemon, coriander, cumin, goda masala, salt'],['Pressure-cook sprouted matki until tender.','Cook tomato-onion masala and simmer matki.','Prepare cabbage-carrot koshimbir with lemon and coriander.','Serve with jowar bhakri.'],'Traditional Maharashtrian-style meal with measured oil.']
-];
-const calendarRecipeObj=calendarRecipeData.map((r,i)=>({id:'cr'+i,name:r[0],mr:r[1],course:r[2],time:r[3],oil:r[4],protein:r[5],fibre:r[6],cal:r[7],ingredients:r[8],method:r[9],note:r[10]}));
-const recipeObj=dedupeRecipesByName(recipes.map((r,i)=>({id:'r'+i,name:r[0],mr:r[1],course:r[2],time:r[3],oil:r[4],protein:r[5],fibre:r[6],cal:r[7],ingredients:r[8],method:r[9],note:r[10]})).concat(calendarRecipeObj));
-const shoppingNames=[['Whole-wheat atta','गव्हाचे पीठ','Staples','12–15 kg/month'],['Jowar flour','ज्वारीचे पीठ','Staples','4–5 kg/month'],['Rice','तांदूळ','Staples','4–5 kg/month'],['Poha','पोहे','Staples','2 kg/month'],['Besan','बेसन','Staples','2–3 kg/month'],['Moong dal','मूग डाळ','Pulses & Legumes','2–3 kg/month'],['Mixed dals','मिश्र डाळी','Pulses & Legumes','2–3 kg/month'],['Whole matki','अख्खी मटकी','Pulses & Legumes','2–3 kg/month'],['Chickpeas/kabuli chana','काबुली हरभरा','Pulses & Legumes','2–3 kg dry'],['Rajma','राजमा','Pulses & Legumes','1.5–2 kg dry'],['Lobia','चवळी','Pulses & Legumes','1–1.5 kg dry'],['Paneer','पनीर','Dairy','5–6 kg/month'],['Plain curd','साधे दही','Dairy','10–12 kg/month'],['Milk','दूध','Dairy','10–12 L/month'],['Eggs','अंडी','Eggs','2–3 dozen/month'],['Soy granules','सोया ग्रॅन्युल्स','Pulses & Legumes','1–1.5 kg/month'],['Bhindi','भेंडी','Vegetables','2–3 kg'],['Dudhi/bottle gourd','दुधी भोपळा','Vegetables','2–3 kg'],['Brinjal/vangi','वांगी','Vegetables','1.5–2 kg'],['Cabbage','कोबी','Vegetables','2–3 kg'],['Carrot','गाजर','Vegetables','2 kg'],['Cauliflower','फुलकोबी','Vegetables','1.5–2 kg'],['Spinach/palak','पालक','Vegetables','1.5–2 kg'],['Tomato','टोमॅटो','Vegetables','4–5 kg'],['Cucumber','काकडी','Vegetables','3–4 kg'],['Onion','कांदा','Vegetables','4–5 kg'],['Pomegranate','डाळिंब','Fruits','1.5–2 kg'],['Guava','पेरू','Fruits','2–3 kg'],['Banana','केळी','Fruits','5–7 dozen/month'],['Papaya','पपई','Fruits','3–4 kg'],['Mosambi','मोसंबी','Fruits','2–3 kg'],['Apples','सफरचंद','Fruits','2–3 kg'],['Peanuts','शेंगदाणे','Nuts & Seeds','1.5–2 kg'],['Flaxseed','जवस','Nuts & Seeds','500–750 g'],['Sesame','तीळ','Nuts & Seeds','500 g'],['Pumpkin seeds','भोपळ्याच्या बिया','Nuts & Seeds','300–500 g'],['Roasted chana','भाजलेला हरभरा','Pulses & Legumes','1.5–2 kg'],['Mustard/groundnut oil','मोहरी/शेंगदाणा तेल','Other','2–3 L combined']];
-const prep=[['Sunday batch-cook chickpeas, rajma and lobia','रविवारी हरभरा, राजमा आणि चवळी शिजवून ठेवणे','2026-09-06','Meal Prep'],['Sprout matki and moong','मटकी आणि मूग मोड आणणे','2026-09-06','Batter / Sprouting'],['Prepare dosa/idli batter','डोसा/इडली बॅटर तयार करणे','2026-09-06','Batter / Sprouting'],['Make peanut-coriander chutney powder','शेंगदाणा-कोथिंबीर चटणी पूड तयार करणे','2026-09-06','Meal Prep'],['Make ground flaxseed portion','जवसाची पूड छोटे भाग करून ठेवणे','2026-09-06','Storage'],['Pre-portion roasted chana and peanuts','भाजलेला हरभरा आणि शेंगदाणे मोजून भाग करणे','2026-09-06','Meal Prep'],['Prepare shopping list for Month 1 week 1','पहिल्या आठवड्याची खरेदी यादी तयार करणे','2026-09-06','Shopping'],['Review Vikas food-reaction log','विकासच्या अन्न-प्रतिक्रिया नोंदी तपासणे','2026-09-13','Review']].map((x,i)=>({id:'p'+i,task:x[0],mr:x[1],date:x[2],area:x[3],done:false}));
-const starter={version:2,members:family,meals:makeMeals(),recipes:recipeObj,shopping:shoppingNames.map((x,i)=>({id:'s'+i,item:x[0],mr:x[1],category:x[2],quantity:x[3],need:false,purchased:false})),prep,healthTips:[],healthTargets:[],nutritionEducation:[],ingredientCatalog:[],recipeIngredients:[],mealAssignments:[],dietaryRules:DEFAULT_DIETARY_RULES,frequencyRules:DEFAULT_FREQUENCY_RULES,uiContent:CANONICAL_UI_CONTENT,householdSettings:{householdSize:4,oilStockMl:5000,oilMonthlyTargetMl:3000,displayName:'कुटुंब भोजन'},updatedAt:new Date().toISOString()};
+const starter={
+ version:2,
+ members:[],
+ meals:[],
+ recipes:[],
+ shopping:[],
+ derivedShopping:[],
+ prep:[],
+ healthTips:[],
+ healthTargets:[],
+ nutritionEducation:[],
+ ingredientCatalog:[],
+ recipeIngredients:[],
+ mealAssignments:[],
+ dietaryRules:DEFAULT_DIETARY_RULES,
+ frequencyRules:DEFAULT_FREQUENCY_RULES,
+ uiContent:CANONICAL_UI_CONTENT,
+ householdSettings:{householdSize:4,oilStockMl:5000,oilMonthlyTargetMl:3000,displayName:'कुटुंब भोजन'},
+ updatedAt:new Date().toISOString()
+};
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');return x&&(x.version===1||x.version===2)?{...clone(starter),...x,version:2}:clone(starter)}catch{return clone(starter)}}
 let state=load();
@@ -192,13 +89,22 @@ async function syncLocalChanges(){
  }
  return true;
 }
-async function seedRemote(){
- const rows=buildRemoteRows(state,remoteHouseholdId);
- const conflicts={'meal_entries':'household_id,meal_date,slot','recipes':'household_id,recipe_key','family_members':'household_id,member_key','shopping_items':'household_id,item_key','prep_tasks':'household_id,task_key'};
- const batches=REMOTE_TABLES.map(table=>[table,rows[table],conflicts[table]]);
- for(const [table,payload,onConflict] of batches){
-  const {error}=await supabase.from(table).upsert(payload,{onConflict});
-  if(error)throw error;
+async function loadDerivedShopping(){
+ if(!remoteHouseholdId)return;
+ try{
+  let headers={};
+  const {data:{session}}=await supabase.auth.getSession();
+  if(session?.access_token){
+   headers['Authorization']=`Bearer ${session.access_token}`;
+  }
+  const res=await fetch(`/api/shopping/derived?household_id=${remoteHouseholdId}&days=7`,{headers});
+  if(res.ok){
+   const data=await res.json();
+   state.derivedShopping=data.items||[];
+   localStorage.setItem(STORAGE,JSON.stringify(state));
+  }
+ }catch(err){
+  console.warn('loadDerivedShopping error',err);
  }
 }
 async function loadRemote(){
@@ -221,48 +127,33 @@ async function loadRemote(){
  ]);
  const err=[a,b,c,d,e,f,g,h,i,j,k,rules,l].find(x=>x.error)?.error;
  if(err)throw err;
-  const wasSeeded=!a.data?.length;
-  if(wasSeeded){
-   try{
-    const planRes=await fetch('/api/planning/plans',{
-     method:'POST',
-     headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({
-      start_date:'2026-09-07',
-      visible_days:7,
-      evaluation_days:30,
-      household_id:remoteHouseholdId
-     })
-    });
-    if(planRes.ok){
-     const planData=await planRes.json();
-     if(planData.plan&&planData.plan.length){
-      state.meals=planData.plan.map(p=>({
-       id:`${p.date}-${p.slot}`,
-       date:p.date,
-       slot:p.slot,
-       title:p.title,
-       marathi:p.marathi_title||mr[p.title]||p.title,
-       recipeId:p.recipe_id,
-       status:'Planned',
-       explanation:p.decision_metadata
-      }));
-     }
-    }
-   }catch(err){console.warn('Initial FastAPI plan generation error, using fallback',err);}
-   await seedRemote();
-   return loadRemote();
-  }
+ if(!a.data?.length){
+  try{
+   let authHeaders={'Content-Type':'application/json'};
+   const {data:{session}}=await supabase.auth.getSession();
+   if(session?.access_token){
+    authHeaders['Authorization']=`Bearer ${session.access_token}`;
+   }
+   const planRes=await fetch('/api/planning/plans',{
+    method:'POST',
+    headers:authHeaders,
+    body:JSON.stringify({
+     start_date:'2026-09-07',
+     visible_days:7,
+     evaluation_days:30,
+     household_id:remoteHouseholdId
+    })
+   });
+   if(planRes.ok){
+    return loadRemote();
+   }
+  }catch(err){console.warn('Initial FastAPI plan generation error',err);}
+ }
  cloudApplyingRemote=true;
  try{
-  if(wasSeeded){
-   const mapped=mapRemoteState({members:c.data,meals:a.data,recipes:b.data,shopping:d.data,prep:e.data},state);
-   state={...mapped,healthTips:mapHealthTips(f.data),healthTargets:mapHealthTargets(g.data),householdSettings:mapHouseholdSettings(h.data)||state.householdSettings,nutritionEducation:mapNutritionEducation(l.data),ingredientCatalog:mapIngredientCatalog(i.data),recipeIngredients:mapRecipeIngredients(j.data),mealAssignments:mapMealAssignments(k.data),dietaryRules:mapDietaryRules(rules.data)};
-  }else{
-   state=mapRemoteState({members:c.data,meals:a.data,recipes:b.data,shopping:d.data,prep:e.data},state);
-   state.healthTips=mapHealthTips(f.data); state.healthTargets=mapHealthTargets(g.data); state.householdSettings=mapHouseholdSettings(h.data)||state.householdSettings;
-   state.nutritionEducation=mapNutritionEducation(l.data); state.ingredientCatalog=mapIngredientCatalog(i.data); state.recipeIngredients=mapRecipeIngredients(j.data); state.mealAssignments=mapMealAssignments(k.data); state.dietaryRules=mapDietaryRules(rules.data);
-  }
+  state=mapRemoteState({members:c.data,meals:a.data,recipes:b.data,shopping:d.data,prep:e.data},state);
+  state.healthTips=mapHealthTips(f.data); state.healthTargets=mapHealthTargets(g.data); state.householdSettings=mapHouseholdSettings(h.data)||state.householdSettings;
+  state.nutritionEducation=mapNutritionEducation(l.data); state.ingredientCatalog=mapIngredientCatalog(i.data); state.recipeIngredients=mapRecipeIngredients(j.data); state.mealAssignments=mapMealAssignments(k.data); state.dietaryRules=mapDietaryRules(rules.data);
   if(uiRes.data && uiRes.data.length){
    state.uiContent=mapUiContent(uiRes.data);
    contentProvider=createContentProvider(state.uiContent);
@@ -322,7 +213,7 @@ function scheduleRemoteRefresh(){
  clearTimeout(cloudRefreshTimer);
  cloudRefreshTimer=setTimeout(async()=>{
   if(!remoteReady||cloudApplyingRemote)return;
-  try{await loadRemote();render();}catch(err){console.warn('realtime refresh failed',err);}
+  try{await loadRemote();await loadDerivedShopping();render();}catch(err){console.warn('realtime refresh failed',err);}
  },250);
 }
 function cleanupCloud(){
@@ -345,6 +236,7 @@ async function initCloud(){
   if(error)throw error;
   remoteHouseholdId=data;
   await loadRemote();
+  await loadDerivedShopping();
   remoteReady=true;
   await syncPhase2();
   subscribeToHousehold();
@@ -707,7 +599,16 @@ function detail(r){
 }
 
 function shopping(){
- const generated=buildShoppingFromAssignments(state.mealAssignments||[],state.recipes,state.recipeIngredients||[],state.ingredientCatalog||[]).map((x,i)=>({id:`derived-${x.canonicalKey}-${x.unit}-${i}`,item:x.name,mr:x.marathiName,category:(state.ingredientCatalog||[]).find(c=>c.canonicalKey===x.canonicalKey)?.category||'Meal-derived',quantity:`${x.quantity} ${x.unit}`,need:false,purchased:false,derived:true}));
+ const generated=(state.derivedShopping||[]).map((x,i)=>({
+  id:`derived-${x.ingredient_key||x.canonicalKey||i}-${x.unit}-${i}`,
+  item:x.name||x.ingredient_key,
+  mr:x.marathi_name||x.marathiName||x.name||x.ingredient_key,
+  category:x.category||'Meal-derived',
+  quantity:`${x.quantity} ${x.unit}`,
+  need:false,
+  purchased:false,
+  derived:true
+ }));
  const manual=state.shopping||[];
  const rows=[...generated,...manual].map(x=>`<div class="shop-row ${x.purchased?'done':''} ${x.derived?'derived':''}"><input type="checkbox" data-purchased="${esc(x.id)}" ${x.purchased?'checked':''} ${x.derived?'disabled':''}><div><b>${esc(t(x.mr,x.item))}</b><small>${esc(x.item)} · ${esc(x.category)}${x.derived?' · '+t('today.shopping_title'):''}</small></div><strong>${esc(x.quantity)}</strong>${x.derived?`<span class="derived-pill">${t('shopping.derived_pill')}</span>`:`<label class="buy-pill"><input type="checkbox" data-need="${x.id}" ${x.need?'checked':''}><span>${t('shopping.need_to_buy')}</span></label><button class="btn-delete" data-delete-shopping="${esc(x.id)}" title="${t('common.delete')}">🗑️</button>`}</div>`).join('');
  return `${head(t('shopping.kicker'),t('shopping.title'),t('shopping.subtitle'))}
@@ -1079,7 +980,7 @@ function render(){
 }
 
 function bind(){
- document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{tts.stop();page=b.dataset.page;selectedRecipe=null;render()});
+ document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{tts.stop();page=b.dataset.page;selectedRecipe=null;if(page==='shopping'){loadDerivedShopping().then(()=>render());}render()});
  const date=document.getElementById('date');if(date)date.onchange=()=>{selectedDate=date.value;render()};
  document.querySelector('[data-day="prev"]')?.addEventListener('click',()=>shiftDay(-1));
  document.querySelector('[data-day="next"]')?.addEventListener('click',()=>shiftDay(1));
@@ -1184,9 +1085,14 @@ function bind(){
     if(!meal)return;
     let changeRes=null;
     try{
+     let headers={'Content-Type':'application/json'};
+     const {data:{session}}=await supabase.auth.getSession();
+     if(session?.access_token){
+      headers['Authorization']=`Bearer ${session.access_token}`;
+     }
      const resp=await fetch('/api/planning/meal-change',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:headers,
       body:JSON.stringify({
        current_meal:{
         date:meal.date,
@@ -1200,12 +1106,12 @@ function bind(){
      });
      if(resp.ok){
       changeRes=await resp.json();
+     }else{
+      const errBody=await resp.json().catch(()=>({}));
+      console.warn('FastAPI meal-change error',resp.status,errBody);
      }
     }catch(err){
-     console.warn('FastAPI meal-change request failed, using local fallback',err);
-    }
-    if(!changeRes||!changeRes.recommendation){
-     changeRes=proposeMealChange(meal,reason,state,state.recipes);
+     console.warn('FastAPI meal-change request failed',err);
     }
     if(changeRes&&changeRes.recommendation){
      const rec=changeRes.recommendation.recipe;
@@ -1229,11 +1135,13 @@ function bind(){
       }catch(err){console.warn('Reschedule sync failed',err);}
      }
      await save();
+     await loadDerivedShopping();
      reasonChangeModalMeal=null;
      render();
-     toast(t('msg.meal_updated')+': '+rec.name);
+     toast(t('msg.meal_updated')+': '+(rec.mr||rec.name));
     }else{
-     toast('No alternatives found satisfying constraints');
+     const warn=(changeRes?.warning||changeRes?.detail||t('meal.no_alternative_found','कोणताही पर्यायी पदार्थ सापडला नाही / No valid alternative found'));
+     toast(warn);
     }
    };
   });

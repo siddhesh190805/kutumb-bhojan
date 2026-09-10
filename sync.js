@@ -2861,7 +2861,7 @@ function evaluateCulinaryAndPracticality(recipe, slot, targetDate, state) {
             penalties.push(`heaviness: dense or heavy lunch on ${targetDate} followed by substantial/heavy dinner`);
           } else if (heaviness === RECIPE_HEAVINESS.LIGHT) {
             score += 25;
-            benefits.push('light dinner provides healthy digestive balance after a substantial lunch');
+            benefits.push('light dinner complements a substantial lunch');
           }
         }
       }
@@ -3132,7 +3132,7 @@ function proposeMealChange(currentMeal, reason, state, candidateRecipes = [], op
       case MEAL_CHANGE_REASONS.WANT_LIGHTER:
         if (candidate.heaviness === RECIPE_HEAVINESS.LIGHT) {
           score += 60;
-          reasons.unshift('Lighter digestive profile matches request');
+          reasons.unshift('Lighter meal form matches request');
         } else if (candidate.heaviness === RECIPE_HEAVINESS.MODERATE) {
           score += 20;
         } else if (candidate.heaviness === RECIPE_HEAVINESS.SUBSTANTIAL || candidate.heaviness === RECIPE_HEAVINESS.HEAVY) {

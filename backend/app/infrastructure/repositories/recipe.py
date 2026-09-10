@@ -160,7 +160,7 @@ class RecipeRepository:
         if not rows:
             return []
 
-        # Also get recipe_ingredients if present
+        # Also get recipe_ingredients if present and map ingredient_id -> canonical_key
         try:
             ri_rows = self.client.get(
                 "recipe_ingredients",
@@ -170,13 +170,24 @@ class RecipeRepository:
         except Exception:
             ri_rows = []
 
+        # Fetch canonical ingredients to resolve ingredient_id -> canonical_key
+        ing_map: dict[str, str] = {}
+        if ri_rows:
+            try:
+                ing_rows = self.client.get("ingredients", {"active": "eq.true"}, auth_token=auth_token)
+                ing_map = {str(i["id"]): str(i.get("canonical_key", "")) for i in ing_rows}
+            except Exception:
+                ing_map = {}
+
         ri_by_recipe: dict[str, list[RecipeIngredient]] = {}
         for r in ri_rows:
             rec_id = str(r.get("recipe_id"))
+            ing_id = str(r.get("ingredient_id") or "")
+            canonical_key = str(r.get("ingredient_key") or ing_map.get(ing_id) or "")
             ri_by_recipe.setdefault(rec_id, []).append(
                 RecipeIngredient(
-                    ingredient_id=str(r.get("ingredient_id")),
-                    ingredient_key=str(r.get("ingredient_key") or ""),
+                    ingredient_id=ing_id,
+                    ingredient_key=canonical_key,
                     quantity=float(r.get("quantity", 0)),
                     unit=str(r.get("unit", "g")),
                     display_text=r.get("display_text"),

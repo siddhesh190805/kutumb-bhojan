@@ -157,4 +157,33 @@ def derive_shopping_from_meal_events(
                         })
 
     # 2. Safely aggregate quantities
-    return aggregate_ingredient_lines(raw_ingredient_lines)
+    aggregated = aggregate_ingredient_lines(raw_ingredient_lines)
+    catalog_map = {c.canonical_key: c for c in (catalog or [])}
+
+    results = []
+    for b in aggregated:
+        key = b["ingredientKey"]
+        cat_item = catalog_map.get(key)
+        name = cat_item.name if cat_item else key.replace("_", " ").title()
+        mr_name = cat_item.marathi_name if cat_item else name
+        category = cat_item.category if cat_item else "Staples"
+        qty = round(b["quantity"], 2)
+        unit = b["unit"]
+        results.append({
+            "id": f"derived-{key}",
+            "ingredientKey": key,
+            "canonicalKey": key,
+            "name": name,
+            "item": name,
+            "marathiName": mr_name,
+            "mr": mr_name,
+            "quantity": qty,
+            "displayQuantity": f"{round(qty, 1)} {unit}".strip() if unit else str(round(qty, 1)),
+            "quantityValue": qty,
+            "unit": unit,
+            "category": category,
+            "derived": True,
+            "need": True,
+            "purchased": False,
+        })
+    return results

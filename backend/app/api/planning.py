@@ -26,7 +26,6 @@ class PlanningPayload(BaseModel):
     evaluation_days: int = Field(default=30, alias="evaluationDays")
     household_id: str | None = Field(default=None, alias="householdId")
     overrides: dict[str, Any] = Field(default_factory=dict)
-    candidate_recipes: list[dict[str, Any]] | None = Field(default=None, alias="candidateRecipes")
 
 
 @router.post("/plans", response_model=PlanningResponse)
@@ -39,13 +38,16 @@ def create_plan(
     if authorization and authorization.startswith("Bearer "):
         auth_token = authorization.split("Bearer ", 1)[1].strip()
 
-    # 1. Resolve household_id
+    # 1. Resolve & verify household authorization
     household_id = payload.household_id
     if not household_id:
         try:
             household_id = supabase_client.bootstrap_household(auth_token=auth_token)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to bootstrap household: {str(e)}")
+    else:
+        if not supabase_client.verify_household_member(household_id, auth_token=auth_token):
+            raise HTTPException(status_code=403, detail="Cross-household access denied")
 
     # 2. Load authoritative canonical domain data from Supabase
     try:

@@ -12,13 +12,19 @@ class SupabaseClient:
 
     def _get_auth_headers(self, custom_token: str | None = None) -> dict[str, str]:
         """Return HTTP headers with apikey and Bearer Authorization."""
+        if custom_token:
+            return {
+                "apikey": self.publishable_key,
+                "Authorization": f"Bearer {custom_token}",
+            }
+
         if self.service_role_key:
             return {
                 "apikey": self.service_role_key,
                 "Authorization": f"Bearer {self.service_role_key}",
             }
         
-        token = custom_token or self._cached_token
+        token = self._cached_token
         if not token:
             token = self._authenticate_anonymously()
 
@@ -26,6 +32,54 @@ class SupabaseClient:
             "apikey": self.publishable_key,
             "Authorization": f"Bearer {token}",
         }
+
+    def get_user_from_token(self, auth_token: str) -> dict[str, Any] | None:
+        """Fetch user profile from Supabase Auth given a bearer token."""
+        url = f"{self.base_url}/auth/v1/user"
+        headers = {
+            "apikey": self.publishable_key,
+            "Authorization": f"Bearer {auth_token}",
+        }
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+
+    def verify_household_member(self, household_id: str, auth_token: str | None = None) -> bool:
+        """
+        Verify if the caller is authorized for the given household.
+        Enforces cross-household isolation boundaries even when service-role is used.
+        """
+        if not household_id:
+            return False
+
+        if not auth_token:
+            try:
+                default_id = self.bootstrap_household()
+                return str(default_id).lower() == str(household_id).lower()
+            except Exception:
+                return False
+
+        # 1. Try RPC with user's JWT token (evaluates Postgres RLS)
+        try:
+            res = self.rpc("is_household_member", {"target_household": household_id}, auth_token=auth_token)
+            if res is True:
+                return True
+        except Exception:
+            pass
+
+        # 2. Server-side lookup using user profile and membership table
+        user = self.get_user_from_token(auth_token)
+        if not user or "id" not in user:
+            return False
+
+        user_id = user["id"]
+        rows = self.get("household_members", {
+            "household_id": f"eq.{household_id}",
+            "user_id": f"eq.{user_id}",
+        })
+        return len(rows) > 0
 
     def _authenticate_anonymously(self) -> str:
         """Obtain an anonymous user token from Supabase Auth."""

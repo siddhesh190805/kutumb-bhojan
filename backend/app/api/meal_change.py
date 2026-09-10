@@ -26,7 +26,6 @@ class MealChangePayload(BaseModel):
     unavailable_ingredient: str | None = Field(default=None, alias="unavailableIngredient")
     unavailable_ingredients: list[str] = Field(default_factory=list, alias="unavailableIngredients")
     custom_constraint: str | None = Field(default=None, alias="customConstraint")
-    candidate_recipes: list[dict[str, Any]] | None = Field(default=None, alias="candidateRecipes")
 
 
 @router.post("/meal-change", response_model=MealChangeResponse)
@@ -48,6 +47,9 @@ def change_meal(
             household_id = supabase_client.bootstrap_household(auth_token=auth_token)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to bootstrap household: {str(e)}")
+    else:
+        if not supabase_client.verify_household_member(household_id, auth_token=auth_token):
+            raise HTTPException(status_code=403, detail="Cross-household access denied")
 
     try:
         catalog = recipe_repo.get_recipes(household_id, auth_token=auth_token)

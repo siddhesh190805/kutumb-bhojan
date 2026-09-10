@@ -234,7 +234,7 @@ test('Phase 2 UI exposes transparent alternate and balance controls',()=>{
   assert.match(source,/Change for this day/);
   assert.match(source,/Revert to automatic/);
   assert.match(source,/Meal balance/);
-  assert.match(source,/buildShoppingFromAssignments/);
+  assert.match(source,/derivedShopping/);
 });
 
 test('backup state contains structured recipe ingredients and meal assignments',()=>{
