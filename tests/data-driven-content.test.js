@@ -63,6 +63,27 @@ test('CONTENT: CANONICAL_UI_CONTENT contains all essential application surfaces'
   assert.ok(keySet.has('tts.stop'));
 });
 
+test('CONTENT: ContentProvider resolves all app.js UI aliases without leaking technical keys', () => {
+  const provider = createContentProvider();
+  
+  // Test brand & learning keys specifically reported by user
+  assert.equal(provider.get('identity.brand_tagline', 'mr'), 'सोपे कौटुंबिक जेवण');
+  assert.equal(provider.get('identity.brand_sub', 'mr'), 'कुटुंबाची पोषण नियोजन पद्धत');
+  assert.equal(provider.get('today.learning_title', 'mr'), 'अन्न → पोषण → शरीर');
+  assert.equal(provider.get('today.learning_sub', 'mr'), 'प्रत्येक पदार्थातून शरीराला काय मिळते ते समजून घ्या.');
+  assert.equal(provider.get('today.learning_cta', 'mr'), 'पोषण समजून घ्या');
+  assert.equal(provider.get('today.learning_cta', 'en'), 'Learn about nutrition');
+
+  // Verify has() returns true for all aliases
+  assert.ok(provider.has('identity.brand_tagline'));
+  assert.ok(provider.has('identity.brand_sub'));
+  assert.ok(provider.has('today.learning_title'));
+  assert.ok(provider.has('today.learning_sub'));
+  assert.ok(provider.has('today.learning_cta'));
+  assert.ok(provider.has('reason.want_lighter'));
+  assert.ok(provider.has('meal.reason_change'));
+});
+
 test('RULES: household_frequency_rules mappings and default rules', () => {
   assert.ok(Array.isArray(DEFAULT_FREQUENCY_RULES));
   const paneerDefault = DEFAULT_FREQUENCY_RULES.find(r => r.ingredientKey === 'paneer' || r.ingredient_key === 'paneer');

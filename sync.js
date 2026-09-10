@@ -101,6 +101,151 @@ function mapUiContent(rows) {
   return map;
 }
 
+const CANONICAL_UI_ALIASES = {
+  "balance.title": { "key": "balance.title", "mr": "ताटाचा समतोल", "en": "Plate balance" },
+  "calendar.days": "calendar.days_suffix",
+  "calendar.meal_entries": "calendar.entries_suffix",
+  "calendar.meals": "calendar.meals_suffix",
+  "category.dairy": "shopping.cat_dairy",
+  "category.fruits": "shopping.cat_fruits",
+  "category.nuts": "shopping.cat_nuts",
+  "category.other": "shopping.cat_other",
+  "category.pulses": "shopping.cat_pulses",
+  "category.spices": "shopping.cat_spices",
+  "category.staples": "shopping.cat_staples",
+  "category.vegetables": "shopping.cat_vegetables",
+  "common.delete": { "key": "common.delete", "mr": "हटवा", "en": "Delete" },
+  "family.years": "family.years_suffix",
+  "health.action_title": { "key": "health.action_title", "mr": "आरोग्य कृती", "en": "Health action" },
+  "health.classroom_desc": "health.classroom_subtitle",
+  "health.nutrition_classroom": "health.classroom_kicker",
+  "health.rule_desc": "health.notice_body",
+  "health.rule_title": "health.notice_title",
+  "health.understand_nutrition": "health.classroom_title",
+  "identity.brand_sub": "app.brand_small",
+  "identity.brand_tagline": "app.brand_strong",
+  "identity.eyebrow": "app.tagline",
+  "identity.title": "app.name",
+  "meal.change_modal_eyebrow": { "key": "meal.change_modal_eyebrow", "mr": "नियोजन बदल", "en": "Meal Change" },
+  "meal.change_modal_title": { "key": "meal.change_modal_title", "mr": "हे जेवण का बदलायचे आहे?", "en": "Why change this meal?" },
+  "meal.no_alternative_found": { "key": "meal.no_alternative_found", "mr": "कोणताही पर्यायी पदार्थ सापडला नाही", "en": "No valid alternative found" },
+  "meal.reason_change": { "key": "meal.reason_change", "mr": "बदला", "en": "Change" },
+  "meal.reason_change_title": { "key": "meal.reason_change_title", "mr": "कारण निवडून बदला", "en": "Change with reason" },
+  "meal_member.alternate": "meal.alternate_label",
+  "meal_member.auto_alt": "meal.auto_alternate_tag",
+  "meal_member.change_for_day": { "key": "meal_member.change_for_day", "mr": "या दिवसासाठी बदल करा", "en": "Change for this day" },
+  "meal_member.change_label": "meal.change_label",
+  "meal_member.family": "meal.family_badge_title",
+  "meal_member.freq_pref": "meal.frequency_tag",
+  "meal_member.member_changes": "meal.alternates_title",
+  "meal_member.no_alternate": "meal.no_alternate",
+  "meal_member.no_suitable_alt": { "key": "meal_member.no_suitable_alt", "mr": "मासिक वारंवारतेमुळे पनीर वगळले", "en": "Paneer skipped due to monthly limit" },
+  "meal_member.override": "meal.override_tag",
+  "meal_member.revert": "meal.revert_label",
+  "meal_member.shared_meal": "meal.family_shared_desc",
+  "msg.confirm_reset": "msg.confirm_reset_starter",
+  "msg.household_saved": "msg.settings_saved",
+  "msg.invalid_backup": "msg.invalid_backup_file",
+  "msg.name_required": "msg.recipe_name_required",
+  "msg.prep_added": "msg.prep_task_added",
+  "msg.prep_removed": "msg.prep_task_removed",
+  "msg.prep_required": "msg.prep_task_required",
+  "msg.recipe_detail_coming_soon": "msg.recipe_detail_soon",
+  "nutrition.egg": "recipes.tag_egg",
+  "nutrition.fibre": "recipes.label_fibre",
+  "nutrition.function": "health.what_does_it_do",
+  "nutrition.oil": "recipes.label_oil",
+  "nutrition.protein": "recipes.label_protein",
+  "nutrition.sources": "health.food_sources",
+  "nutrition.vegetarian": "recipes.tag_veg",
+  "nutrition.what": "health.what_is_it",
+  "nutrition.where": "health.where_in_body",
+  "nutrition.why": "health.why_does_it_matter",
+  "oil.change_target": "oil.btn_change_target",
+  "oil.household": "oil.household_label",
+  "oil.household_target": "oil.target_kicker",
+  "oil.monthly_target": "oil.monthly_desc",
+  "oil.stock": "oil.stock_suffix",
+  "oil.title": "oil.target_title",
+  "prep.add_btn": { "key": "prep.add_btn", "mr": "टास्क जोडा", "en": "Add task" },
+  "prep.area_batter_sprouting": "prep.area_batter",
+  "reason.diff_form": { "key": "reason.diff_form", "mr": "वेगळा प्रकार हवे", "en": "Different meal form" },
+  "reason.diff_form_desc": { "key": "reason.diff_form_desc", "mr": "भाजी-पोळी, उसळ, खिचडी इत्यादी प्रकार बदला", "en": "Switch between sabzi-roti, usal, khichdi" },
+  "reason.diff_grain": { "key": "reason.diff_grain", "mr": "वेगळे धान्य हवे", "en": "Different grain" },
+  "reason.diff_grain_desc": { "key": "reason.diff_grain_desc", "mr": "गहू सोडून ज्वारी/तांदूळ/नाचणी पर्याय", "en": "Jowar, rice, or ragi alternatives" },
+  "reason.diff_protein": { "key": "reason.diff_protein", "mr": "वेगळे प्रोटीन हवे", "en": "Different protein" },
+  "reason.diff_protein_desc": { "key": "reason.diff_protein_desc", "mr": "डाळ, कडधान्य किंवा इतर प्रोटीन स्त्रोत", "en": "Dal, pulses or alternate protein sources" },
+  "reason.not_in_mood": { "key": "reason.not_in_mood", "mr": "काहीतरी वेगळे हवे", "en": "Not in the mood" },
+  "reason.not_in_mood_desc": { "key": "reason.not_in_mood_desc", "mr": "पोषण सांभाळून वेगळा पाककृती पर्याय", "en": "Alternate dish keeping nutrition intact" },
+  "reason.want_lighter": { "key": "reason.want_lighter", "mr": "हलके जेवण हवे", "en": "Want lighter" },
+  "reason.want_lighter_desc": { "key": "reason.want_lighter_desc", "mr": "पचनास सोपे आणि हलके अन्न पर्याय", "en": "Easily digestible lighter options" },
+  "reason.want_quick": { "key": "reason.want_quick", "mr": "कमी वेळात होणारे हवे", "en": "Quick prep" },
+  "reason.want_quick_desc": { "key": "reason.want_quick_desc", "mr": "भिजवण्याची गरज नसलेले झटपट पर्याय", "en": "Fast prep without soaking needed" },
+  "recipe.back": "meal.back",
+  "recipe.change_slot": "meal.change_slot",
+  "recipe.edit_button": "recipes.btn_edit",
+  "recipe.ingredients": "recipes.heading_ingredients",
+  "recipe.kicker": "recipes.kicker",
+  "recipe.legacy_unmapped": "recipes.legacy_unmapped",
+  "recipe.method_steps": "recipes.heading_method",
+  "recipe.notes": "recipes.heading_notes",
+  "recipe.nutrition_explained": { "key": "recipe.nutrition_explained", "mr": "पोषण माहिती", "en": "Nutrition explained" },
+  "recipe.servings": "recipes.servings_suffix",
+  "recipe.view_button": "meal.view_recipe",
+  "recipe_form.add_title": "recipes.modal_add_title",
+  "recipe_form.cancel_btn": "btn.cancel",
+  "recipe_form.category_label": "recipes.form_course",
+  "recipe_form.close": "btn.close",
+  "recipe_form.edit_title": "recipes.modal_edit_title",
+  "recipe_form.en_name_label": "recipes.form_en_name",
+  "recipe_form.ingredients_label": "recipes.form_ingredients",
+  "recipe_form.method_label": "recipes.form_cooking_method",
+  "recipe_form.mr_name_label": "recipes.form_mr_name",
+  "recipe_form.mr_name_ph": { "key": "recipe_form.mr_name_ph", "mr": "उदा. वरण भात", "en": "e.g. Dal Rice" },
+  "recipe_form.notes_label": "recipes.form_notes",
+  "recipe_form.notes_ph": "recipes.form_notes_placeholder",
+  "recipe_form.role_label": "recipes.form_role",
+  "recipe_form.role_main": "recipes.form_role_main",
+  "recipe_form.role_side": "recipes.form_role_side",
+  "recipe_form.role_snack": "recipes.form_role_snack",
+  "recipe_form.save_btn": "btn.save",
+  "recipe_form.servings_label": "recipes.form_servings",
+  "recipe_form.steps_label": "recipes.form_method",
+  "recipe_form.time_label": "recipes.form_time",
+  "recipes.add_button": "recipes.btn_add_recipe",
+  "recipes.count": "recipes.count_suffix",
+  "settings.export_btn": "settings.btn_export",
+  "settings.household_size_label": "settings.label_household_size",
+  "settings.import_btn": "settings.btn_import",
+  "settings.oil_reduce_advice": "settings.oil_advice_text",
+  "settings.oil_stock_label": "settings.label_oil_stock",
+  "settings.oil_target_label": "settings.label_oil_target",
+  "settings.oil_where_reduce": "settings.oil_advice_heading",
+  "settings.paneer_limit_note": { "key": "settings.paneer_limit_note", "mr": "महिनाभरात नियोजित पनीरचे जेवण", "en": "Planned paneer meals in month" },
+  "settings.paneer_usage_label": { "key": "settings.paneer_usage_label", "mr": "नियोजित पनीर वारंवारता", "en": "Planned Paneer Frequency" },
+  "settings.pref_desc": { "key": "settings.pref_desc", "mr": "पनीर मासिक वारंवारता मर्यादा (घरगुती नियोजन प्राधान्य, वैद्यकीय सल्ला नाही).", "en": "Paneer monthly frequency limit (household planning preference, not medical advice)." },
+  "settings.pref_title": { "key": "settings.pref_title", "mr": "घरगुती नियोजन प्राधान्ये", "en": "Household Planning Preferences" },
+  "settings.reset_btn": "settings.btn_reset",
+  "settings.save_btn": "settings.btn_save_settings",
+  "shopping.add_btn": "shopping.btn_add",
+  "shopping.derived_pill": { "key": "shopping.derived_pill", "mr": "नियोजनानुसार", "en": "From plan" },
+  "shopping.items_remaining": "shopping.items_to_buy_suffix",
+  "sidebar.q_how": "sidebar.q_recipe",
+  "sidebar.q_what": "sidebar.q_cook",
+  "today.food_details_unavailable": { "key": "today.food_details_unavailable", "mr": "तपशील उपलब्ध नाही", "en": "Details unavailable" },
+  "today.foods_kicker": "today.food_kicker",
+  "today.foods_sub": "today.food_subtitle",
+  "today.foods_title": "today.food_title",
+  "today.learning_cta": "today.btn_learn_nutrition",
+  "today.learning_sub": "today.learning_small",
+  "today.learning_title": "today.learning_strong",
+  "today.next_day": "meal.next_day",
+  "today.no_prep": "today.prep_empty",
+  "today.open_shopping": "today.btn_open_shopping",
+  "today.prev_day": "meal.prev_day",
+  "today.view_health": "today.btn_view_health",
+};
+
 function createContentProvider(contentData = CANONICAL_UI_CONTENT) {
   if (!contentData || (contentData instanceof Map && contentData.size === 0) || (typeof contentData === 'object' && Object.keys(contentData).length === 0)) contentData = CANONICAL_UI_CONTENT;
   const map = contentData instanceof Map
@@ -119,6 +264,21 @@ function createContentProvider(contentData = CANONICAL_UI_CONTENT) {
     if (key.startsWith('slot.')) {
       const cap = `slot.${key.slice(5).charAt(0).toUpperCase() + key.slice(6).toLowerCase()}`;
       if (map.has(cap)) return map.get(cap);
+    }
+    const alias = CANONICAL_UI_ALIASES[key] || CANONICAL_UI_ALIASES[lower];
+    if (alias) {
+      if (typeof alias === 'string') {
+        if (map.has(alias)) return map.get(alias);
+        const lowerAlias = alias.toLowerCase();
+        if (map.has(lowerAlias)) return map.get(lowerAlias);
+        if (typeof CANONICAL_UI_CONTENT !== 'undefined' && CANONICAL_UI_CONTENT[alias]) return CANONICAL_UI_CONTENT[alias];
+      } else if (typeof alias === 'object') {
+        return alias;
+      }
+    }
+    if (typeof CANONICAL_UI_CONTENT !== 'undefined') {
+      if (CANONICAL_UI_CONTENT[key]) return CANONICAL_UI_CONTENT[key];
+      if (CANONICAL_UI_CONTENT[lower]) return CANONICAL_UI_CONTENT[lower];
     }
     return null;
   }
@@ -160,7 +320,7 @@ function createContentProvider(contentData = CANONICAL_UI_CONTENT) {
     return obj;
   }
 
-  return { get, getRaw, getByCategory, toJSON, size: map.size, has: (k) => map.has(k) };
+  return { get, getRaw, getByCategory, toJSON, size: map.size, has: (k) => resolveItem(k) !== null };
 }
 
 const CANONICAL_UI_CONTENT = {
@@ -2092,6 +2252,18 @@ const CANONICAL_UI_CONTENT = {
   }
 };
 
+for (const [k, v] of Object.entries(CANONICAL_UI_ALIASES)) {
+  if (!CANONICAL_UI_CONTENT[k]) {
+    if (typeof v === 'string') {
+      if (CANONICAL_UI_CONTENT[v]) {
+        CANONICAL_UI_CONTENT[k] = { ...CANONICAL_UI_CONTENT[v], key: k };
+      }
+    } else if (typeof v === 'object' && v !== null) {
+      CANONICAL_UI_CONTENT[k] = { ...v, category: v.category || 'general', sortOrder: 999 };
+    }
+  }
+}
+
 function mapFrequencyRules(rows) {
   return (rows || []).filter(x => x.active !== false).map(x => ({
     id: x.id,
@@ -3223,8 +3395,8 @@ function proposeMealChange(currentMeal, reason, state, candidateRecipes = [], op
   };
 }
 
-if (typeof module !== 'undefined' && module.exports) Object.assign(module.exports, {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange});
-export {CANONICAL_UI_CONTENT,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange};
+if (typeof module !== 'undefined' && module.exports) Object.assign(module.exports, {CANONICAL_UI_CONTENT,CANONICAL_UI_ALIASES,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange});
+export {CANONICAL_UI_CONTENT,CANONICAL_UI_ALIASES,REMOTE_TABLES,PHASE2_TABLES,buildRemoteRows,mapRemoteState,mapHealthTips,mapHealthTargets,mapHouseholdSettings,dedupeRecipesByName,SUPPORTED_UNITS,normalizeIngredientAlias,normalizeUnit,convertQuantity,aggregateIngredientLines,parseLegacyIngredientLine,mapLegacyRecipeIngredients,deriveRecipeDietaryFlags,DEFAULT_DIETARY_RULES,DEFAULT_FREQUENCY_RULES,recipeContainsIngredient,countIngredientMonthlyOccurrences,getHouseholdFrequencyStatus,evaluateRecipeEligibility,rankAlternateRecipes,selectAutomaticAlternate,buildAutomaticAssignments,applyDayLevelOverride,revertDayLevelOverride,mapNutritionEducation,getNutritionEducation,getRecipeNutritionConcepts,evaluateMealBalance,buildShoppingFromAssignments,mapIngredientCatalog,mapRecipeIngredients,mapMealAssignments,buildStructuredRecipe,mapDietaryRules,groupMemberAssignments,mapUiContent,createContentProvider,mapFrequencyRules,RECIPE_HEAVINESS,MEAL_FORMS,PRIMARY_GRAINS,PRIMARY_PROTEIN_SOURCES,enrichRecipeMetadata,createPlanningState,evaluateHardConstraints,evaluateCulinaryAndPracticality,evaluateNutritionDiversity,generateCandidates,generatePlan,MEAL_CHANGE_REASONS,proposeMealChange};
 
 
 

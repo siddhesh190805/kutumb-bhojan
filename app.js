@@ -38,7 +38,7 @@ const starter={
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');return x&&(x.version===1||x.version===2)?{...clone(starter),...x,version:2}:clone(starter)}catch{return clone(starter)}}
 let state=load();
-if(!state.uiContent||!state.uiContent.length) state.uiContent=CANONICAL_UI_CONTENT;
+if(!state.uiContent||(Array.isArray(state.uiContent)&&!state.uiContent.length)||(typeof state.uiContent==='object'&&Object.keys(state.uiContent).length===0)) state.uiContent=CANONICAL_UI_CONTENT;
 if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEFAULT_FREQUENCY_RULES;
 let contentProvider=createContentProvider(state.uiContent);
 state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,state.recipeIngredients||[],state.ingredientCatalog||[]));
@@ -265,6 +265,13 @@ function setLanguage(value){language=['mr','en','both'].includes(value)?value:'b
 function t(keyOrMr, fallbackEn){
   if(contentProvider && contentProvider.has(keyOrMr)){
     return contentProvider.get(keyOrMr, language, fallbackEn);
+  }
+  const isKeyLike = typeof keyOrMr === 'string' && /^[a-z0-9_.-]+$/i.test(keyOrMr) && keyOrMr.includes('.');
+  if(isKeyLike){
+    if(fallbackEn) return fallbackEn;
+    const parts = keyOrMr.split('.');
+    const label = parts[parts.length - 1].replace(/_/g, ' ');
+    return label.charAt(0).toUpperCase() + label.slice(1);
   }
   const mrText = keyOrMr || '';
   const enText = fallbackEn || '';
@@ -1214,7 +1221,7 @@ function bind(){
  document.querySelectorAll('[data-tts-key]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const key=b.dataset.ttsKey;if(tts.getCurrentKey()===key&&tts.isSpeaking()){tts.stop();}else{tts.speak({key,mrText:b.dataset.ttsMr,enText:b.dataset.ttsEn,language});}});
  document.querySelector('[data-save-settings]')?.addEventListener('click',async()=>{const s=state.householdSettings||clone(starter.householdSettings);s.oilStockMl=Math.max(0,Number(document.getElementById('oilStock').value)||0);s.oilMonthlyTargetMl=Math.max(100,Number(document.getElementById('oilTarget').value)||3000);s.householdSize=Math.min(20,Math.max(1,Number(document.getElementById('householdSize').value)||4));state.householdSettings=s;localStorage.setItem(STORAGE,JSON.stringify(state));const ok=await saveHouseholdSettings();if(ok)toast(t('msg.household_saved'));render()});
  document.querySelector('[data-export]')?.addEventListener('click',()=>{const blob=new Blob([JSON.stringify(buildBackupPayload(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`kutumb-bhojan-backup-${new Date().toISOString().slice(0,10)}.json`;a.click()});
- document.getElementById('importFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=async()=>{try{const x=JSON.parse(r.result);if(x.version!==1&&x.version!==2)throw new Error('Invalid version');state={...clone(starter),...x,version:2};if(!state.uiContent||!state.uiContent.length) state.uiContent=CANONICAL_UI_CONTENT;if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEFAULT_FREQUENCY_RULES;contentProvider=createContentProvider(state.uiContent);state.recipes=(state.recipes||[]).map(rec=>buildStructuredRecipe(rec,state.recipeIngredients||[],state.ingredientCatalog||[]));ensureAutomaticAssignments();localStorage.setItem(STORAGE,JSON.stringify(state));if(remoteReady){await saveHouseholdSettings();await syncLocalChanges();await syncPhase2();}render();toast(t('msg.backup_restored'))}catch(err){console.warn('Import error',err);toast(t('msg.invalid_backup'))}};r.readAsText(file)});
+ document.getElementById('importFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=async()=>{try{const x=JSON.parse(r.result);if(x.version!==1&&x.version!==2)throw new Error('Invalid version');state={...clone(starter),...x,version:2};if(!state.uiContent||(Array.isArray(state.uiContent)&&!state.uiContent.length)||(typeof state.uiContent==='object'&&Object.keys(state.uiContent).length===0)) state.uiContent=CANONICAL_UI_CONTENT;if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEFAULT_FREQUENCY_RULES;contentProvider=createContentProvider(state.uiContent);state.recipes=(state.recipes||[]).map(rec=>buildStructuredRecipe(rec,state.recipeIngredients||[],state.ingredientCatalog||[]));ensureAutomaticAssignments();localStorage.setItem(STORAGE,JSON.stringify(state));if(remoteReady){await saveHouseholdSettings();await syncLocalChanges();await syncPhase2();}render();toast(t('msg.backup_restored'))}catch(err){console.warn('Import error',err);toast(t('msg.invalid_backup'))}};r.readAsText(file)});
  document.querySelector('[data-reset]')?.addEventListener('click',()=>{if(confirm(t('msg.confirm_reset'))){state=clone(starter);state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,[],[]));ensureAutomaticAssignments();save();if(remoteReady)saveHouseholdSettings();render()}});
 }
 
