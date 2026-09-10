@@ -1,6 +1,8 @@
 from datetime import datetime
 from backend.app.domain.models import Recipe
 from backend.app.domain.rules import recipe_contains_ingredient
+from backend.app.domain.seasonality import get_current_season, evaluate_ingredient_season
+from backend.app.planning.diversity import RollingDiversityTracker
 
 
 def score_candidate(
@@ -9,6 +11,7 @@ def score_candidate(
     target_date: str,
     recent_meals_by_date_slot: dict[str, Recipe],
     recent_dates_with_paneer: set[str],
+    diversity_tracker: RollingDiversityTracker | None = None,
 ) -> tuple[float, list[str], list[str], list[str]]:
     """
     Score a valid candidate recipe.
@@ -21,6 +24,7 @@ def score_candidate(
 
     dt = datetime.strptime(target_date, "%Y-%m-%d")
     is_weekend = dt.weekday() in (5, 6)
+    current_season = get_current_season(dt)
 
     # 1. Heaviness Spacing
     if slot.lower() == "dinner":
@@ -105,5 +109,24 @@ def score_candidate(
     elif time_min <= 20:
         score += 10.0
         positive_reasons.append(f"Quick preparation (~{time_min} min)")
+
+    # 6. Seasonal Produce Alignment (Soft bonus; out-of-season NEVER penalized)
+    peak_seasonal_ingredients: list[str] = []
+    for ing in recipe.structured_ingredients:
+        is_peak, status, cul = evaluate_ingredient_season(ing.ingredient_key, current_season)
+        if is_peak:
+            peak_seasonal_ingredients.append(ing.ingredient_key.replace("_", " ").title())
+    if peak_seasonal_ingredients:
+        score += 10.0
+        unique_peak = sorted(set(peak_seasonal_ingredients))
+        positive_reasons.append(f"Features seasonal {current_season} produce ({', '.join(unique_peak)})")
+        culinary_benefits.append(f"Seasonal fresh produce ({', '.join(unique_peak)})")
+
+    # 7. Multi-Day Contextual Diversity
+    if diversity_tracker:
+        div_score, div_pos, div_pen = diversity_tracker.evaluate_candidate_diversity(recipe, slot, target_date)
+        score += div_score
+        positive_reasons.extend(div_pos)
+        soft_penalties.extend(div_pen)
 
     return score, positive_reasons, culinary_benefits, soft_penalties

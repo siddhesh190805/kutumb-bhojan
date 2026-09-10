@@ -38,19 +38,19 @@ class CanonicalIngredient:
 
 @dataclass(frozen=True)
 class DerivedRecipeFoodProfile:
-    food_groups: frozenset[str]
-    legume_identities: frozenset[str]
-    grain_identities: frozenset[str]
-    vegetable_identities: frozenset[str]
-    fruit_identities: frozenset[str]
-    seed_identities: frozenset[str]
-    nut_identities: frozenset[str]
-    has_whole_grain_or_millet: bool
-    protein_contributions: frozenset[str]
-    fibre_contributions: frozenset[str]
-    carbohydrate_roles: frozenset[str]
-    fat_contributions: frozenset[str]
-    fat_qualities: frozenset[str]
+    food_groups: frozenset[str] = frozenset()
+    legume_identities: frozenset[str] = frozenset()
+    grain_identities: frozenset[str] = frozenset()
+    vegetable_identities: frozenset[str] = frozenset()
+    fruit_identities: frozenset[str] = frozenset()
+    seed_identities: frozenset[str] = frozenset()
+    nut_identities: frozenset[str] = frozenset()
+    has_whole_grain_or_millet: bool = False
+    protein_contributions: frozenset[str] = frozenset()
+    fibre_contributions: frozenset[str] = frozenset()
+    carbohydrate_roles: frozenset[str] = frozenset()
+    fat_contributions: frozenset[str] = frozenset()
+    fat_qualities: frozenset[str] = frozenset()
     provenance: str = "derived"
 
 
@@ -277,6 +277,7 @@ class PlanningRequest(BaseModel):
 class PlanningResponse(BaseModel):
     success: bool
     plan: list[MealPlanSlot]
+    prep_tasks: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     evaluation_summary: EvaluationSummary
 

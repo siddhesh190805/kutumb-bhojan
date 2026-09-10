@@ -35,6 +35,9 @@ FERMENTATION_REQUIREMENTS = frozenset({"none", "short", "overnight", "optional",
 PREPARATION_BURDENS = frozenset({"minimal", "low", "moderate", "high", "unknown"})
 BATCH_PREP_SUITABILITIES = frozenset({"high", "moderate", "low", "none", "unknown"})
 METADATA_STATUSES = frozenset({"verified", "draft", "unknown"})
+SEASONS = frozenset({"summer", "monsoon", "winter", "all_season"})
+SEASONAL_AVAILABILITIES = frozenset({"peak", "available", "scarce", "unknown"})
+CULINARY_SUITABILITIES = frozenset({"cooling", "warming", "digestive", "neutral", "unknown"})
 
 
 def validate_taxonomy_value(field: str, value: str | None, allowed: frozenset[str], default: str = "unknown") -> str:

@@ -7,6 +7,9 @@ from backend.app.planning.scoring import score_candidate
 from backend.app.planning.explanations import build_explanation
 
 
+from backend.app.planning.diversity import RollingDiversityTracker
+
+
 class PartialPlan:
     def __init__(
         self,
@@ -15,12 +18,18 @@ class PartialPlan:
         planned_meals_by_key: dict[str, Recipe] | None = None,
         dates_with_paneer: set[str] | None = None,
         paneer_counts_by_month: dict[str, int] | None = None,
+        diversity_tracker: RollingDiversityTracker | None = None,
     ):
         self.cumulative_score = cumulative_score
         self.slots = list(slots or [])
         self.planned_meals_by_key = dict(planned_meals_by_key or {})
         self.dates_with_paneer = set(dates_with_paneer or set())
         self.paneer_counts_by_month = dict(paneer_counts_by_month or {})
+        self.diversity_tracker = (
+            diversity_tracker.copy()
+            if diversity_tracker
+            else RollingDiversityTracker(self.planned_meals_by_key)
+        )
 
     def copy(self) -> "PartialPlan":
         return PartialPlan(
@@ -29,6 +38,7 @@ class PartialPlan:
             planned_meals_by_key=dict(self.planned_meals_by_key),
             dates_with_paneer=set(self.dates_with_paneer),
             paneer_counts_by_month=dict(self.paneer_counts_by_month),
+            diversity_tracker=self.diversity_tracker.copy(),
         )
 
     def add_decision(
@@ -49,6 +59,7 @@ class PartialPlan:
             "explanation": explanation,
         })
         self.planned_meals_by_key[key] = recipe
+        self.diversity_tracker.record_meal(target_date, slot, recipe)
 
         if recipe_contains_ingredient(recipe, "paneer"):
             self.dates_with_paneer.add(target_date)
@@ -149,6 +160,7 @@ def run_bounded_beam_search(
                         target_date=current_date_str,
                         recent_meals_by_date_slot=partial.planned_meals_by_key,
                         recent_dates_with_paneer=partial.dates_with_paneer,
+                        diversity_tracker=partial.diversity_tracker,
                     )
                     scored_candidates.append((cand, step_score, pos_reasons, cul_benefits, soft_pen))
 

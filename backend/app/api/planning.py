@@ -9,6 +9,7 @@ from backend.app.infrastructure.supabase import supabase_client
 from backend.app.infrastructure.repositories.recipe import RecipeRepository
 from backend.app.infrastructure.repositories.household import HouseholdRepository
 from backend.app.infrastructure.repositories.meal_entry import MealHistoryRepository
+from backend.app.infrastructure.repositories.prep_task import PrepTaskRepository
 from backend.app.planning.engine import PlanningEngine
 
 router = APIRouter()
@@ -16,6 +17,7 @@ planning_engine = PlanningEngine(beam_width=3)
 recipe_repo = RecipeRepository(supabase_client)
 household_repo = HouseholdRepository(supabase_client)
 meal_repo = MealHistoryRepository(supabase_client)
+prep_repo = PrepTaskRepository(supabase_client)
 
 
 class PlanningPayload(BaseModel):
@@ -86,9 +88,11 @@ def create_plan(
             overrides=payload.overrides,
         )
 
-        # 5. Persist the generated plan
+        # 5. Persist the generated plan and prep tasks
         try:
             meal_repo.persist_plan(household_id, result.plan, auth_token=auth_token)
+            if result.prep_tasks:
+                prep_repo.persist_prep_tasks(household_id, result.prep_tasks, auth_token=auth_token)
         except Exception as persist_err:
             result.warnings.append(f"Persistence notice: {str(persist_err)}")
 

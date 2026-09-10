@@ -21,6 +21,7 @@ from backend.app.domain.rules import (
 )
 from backend.app.planning.search import run_bounded_beam_search
 from backend.app.planning.constraints import is_slot_compatible
+from backend.app.planning.prep import generate_household_prep_tasks
 
 
 def select_vegetarian_alternate(
@@ -176,9 +177,14 @@ class PlanningEngine:
                 if month_paneer[m_key] > 5:
                     warnings.append(f"Quality Gate Warning: Paneer occurrences exceed monthly limit ({month_paneer[m_key]}/5)")
 
+        # Generate actionable household preparation tasks for the visible plan
+        prep_items = generate_household_prep_tasks(plan_slots)
+        prep_tasks_payload = [pt.model_dump() for pt in prep_items]
+
         return PlanningResponse(
             success=True,
             plan=plan_slots,
+            prep_tasks=prep_tasks_payload,
             warnings=warnings,
             evaluation_summary=EvaluationSummary(
                 visible_days=visible_days,
