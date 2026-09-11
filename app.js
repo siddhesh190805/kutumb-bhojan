@@ -43,8 +43,10 @@ if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEF
 let contentProvider=createContentProvider(state.uiContent);
 state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,state.recipeIngredients||[],state.ingredientCatalog||[]));
 let page='today';let selectedDate=new Date().toLocaleDateString('en-CA');let selectedRecipe=null;let toastTimer;
-let theme=localStorage.getItem(THEME_STORAGE)||'system';
-let language=localStorage.getItem(LANGUAGE_STORAGE)||'both';
+let theme='system';
+try{ theme=localStorage.getItem(THEME_STORAGE)||'system'; }catch(err){ console.warn('theme storage read failed',err); }
+let language='both';
+try{ language=localStorage.getItem(LANGUAGE_STORAGE)||'both'; }catch(err){ console.warn('language storage read failed',err); }
 let cloudRefreshTimer=null;
 let cloudInitializing=false;
 let cloudApplyingRemote=false;
@@ -274,9 +276,20 @@ function dateLabel(d){return new Intl.DateTimeFormat(language==='en'?'en-IN':'mr
 function fmt(d){return new Intl.DateTimeFormat(language==='en'?'en-IN':'mr-IN',{weekday:'short',day:'numeric',month:'short'}).format(new Date(d+'T00:00:00'))}
 function findRecipe(title){return state.recipes.find(r=>r.name.toLowerCase()===String(title||'').toLowerCase())||null}
 function applyTheme(){document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme==='system'?'light dark':theme}
-function setTheme(value){theme=value;localStorage.setItem(THEME_STORAGE,value);applyTheme();render()}
+function setTheme(value){
+ theme=value;
+ try{ localStorage.setItem(THEME_STORAGE,value); }catch(err){ console.warn('theme localStorage write failed',err); }
+ applyTheme();
+ render();
+}
 function applyLanguage(){document.documentElement.dataset.language=language}
-function setLanguage(value){language=['mr','en','both'].includes(value)?value:'both';localStorage.setItem(LANGUAGE_STORAGE,language);tts.stop();applyLanguage();render()}
+function setLanguage(value){
+ language=['mr','en','both'].includes(value)?value:'both';
+ try{ localStorage.setItem(LANGUAGE_STORAGE,language); }catch(err){ console.warn('language localStorage write failed',err); }
+ tts.stop();
+ applyLanguage();
+ render();
+}
 
 function t(keyOrMr, fallbackEn){
   if(contentProvider && contentProvider.has(keyOrMr)){
