@@ -310,7 +310,8 @@ function ttsButtonHtml(key, mrText, enText, extraClass=''){
 function assignmentsForMeal(meal){return (state.mealAssignments||[]).filter(a=>a.mealEntryId===meal.id);}
 function assignmentOptions(meal,member,assignment){
  const current=assignment?.recipeId;
- const candidates=state.recipes.filter(r=>r.dietaryFlags?.vegetarian && !r.dietaryFlags?.containsEgg);
+ const rules = state.dietaryRules?.length ? state.dietaryRules : DEFAULT_DIETARY_RULES;
+ const candidates=state.recipes.filter(r=>evaluateRecipeEligibility(member,r,rules).eligible);
  return candidates.map(r=>`<option value="${esc(r.id)}" ${r.id===current?'selected':''}>${esc(t(r.mr,r.name))}</option>`).join('');
 }
 
@@ -658,6 +659,38 @@ function prepView(){
 }
 
 function familyView(){
+ const dietaryRules = state.dietaryRules?.length ? state.dietaryRules : DEFAULT_DIETARY_RULES;
+ const ingredientLabel = (key)=>{
+   if(key==='egg') return t('dietary.egg_label','अंडी / Egg');
+   if(key==='paneer') return t('dietary.paneer_label','पनीर / Paneer');
+   const cat = (state.ingredientCatalog||[]).find(x=>x.canonicalKey===key);
+   if(cat) return t(cat.marathiName, cat.name);
+   return key;
+ };
+ const dietaryPanel = `<div class="panel dietary-panel">
+  <h3>🥗 ${t('dietary.panel_title','आहाराच्या पसंती / Dietary preferences')}</h3>
+  <p class="muted">${t('dietary.panel_desc','प्रत्येक सदस्यासाठी कोणते पदार्थ योग्य आहेत ते निवडा. हा घरगुती पसंती आहे, वैद्यकीय सल्ला नाही. / Choose which foods are suitable per member. Household preference, not medical advice.')}</p>
+  ${(dietaryRules||[]).map(rule=>{
+    const ingLabel = ingredientLabel(rule.ingredientKey);
+    const isEgg = rule.ingredientKey==='egg';
+    const note = isEgg ? t('dietary.egg_note','अंडी असलेले पदार्थ निवडलेल्या सदस्यांसाठीच नियोजनात दिसतील. / Egg-containing meals will be planned only for selected members.') : t('dietary.generic_note','या घटक असलेले पदार्थ निवडलेल्या सदस्यांसाठी वगळले जातील किंवा पर्याय दिला जाईल. / Meals with this ingredient will be excluded or alternated for selected members.');
+    return `<div class="dietary-rule">
+      <div class="dietary-rule-head"><b>${esc(rule.ruleKey||rule.ingredientKey)}</b> <span>— ${esc(ingLabel)}</span> <small>${rule.active===false? t('common.disabled','Disabled'):''}</small></div>
+      <p class="muted"><small>${esc(note)}</small></p>
+      <div class="dietary-members">
+        ${state.members.map(m=>{
+          const mid=m.memberKey||m.id;
+          const isAllowed = (rule.allowedMemberIds||[]).map(x=>x.toLowerCase()).includes(mid.toLowerCase());
+          const isDisallowed = (rule.disallowedMemberIds||[]).map(x=>x.toLowerCase()).includes(mid.toLowerCase());
+          const checked = isAllowed && !isDisallowed;
+          return `<label class="dietary-member-toggle"><input type="checkbox" data-dietary-toggle="${esc(rule.ruleKey||rule.ingredientKey)}" data-member-key="${esc(mid)}" ${checked?'checked':''}><span>${esc(t(m.mr,m.name))}</span><small>${checked? t('dietary.allowed','✓ योग्य / Allowed'): t('dietary.not_allowed','✗ वगळले / Excluded')}</small></label>`;
+        }).join('')}
+      </div>
+      <small class="muted">${t('dietary.effect_note','याचा परिणाम जेवणाच्या नियोजनावर व पर्याय निवडीवर होईल. / This affects meal planning and alternate selection.')} ${!state.recipes.some(r=>r.dietaryFlags?.containsEgg) && isEgg ? `<em>${t('dietary.no_alt_warning','पर्यायी पाककृती उपलब्ध नसल्यास सूचना दर्शवली जाईल, नवीन पाककृती तयार केली जाणार नाही. / If no suitable alternate exists, a notice will be shown — no recipe will be invented.')}</em>`:''}</small>
+    </div>`;
+  }).join('')}
+  <p class="muted"><small>${t('dietary.safety_note','कोणतीही वैद्यकीय निदान/उपचार भाषा नाही. हा घरगुती आहार-पसंती नियम आहे. / No medical diagnosis. Household dietary preference rule only.')}</small></p>
+ </div>`;
  return `${head(t('family.kicker'),t('family.title'),t('family.subtitle'))}
  <div class="family-grid">${state.members.map(m=>`<article class="person-card">
   <div class="avatar">${esc(m.name[0])}</div>
@@ -666,7 +699,7 @@ function familyView(){
   <div class="person-stats"><span>${esc(m.weight)} kg</span><span>${esc(m.height)} cm</span></div>
   <b>${esc(m.activity)}</b>
   <p class="muted">${esc(m.note)}</p>
- </article>`).join('')}</div>`;
+ </article>`).join('')}</div>${dietaryPanel}`;
 }
 
 function nutritionEducationCard(e){
@@ -1214,8 +1247,38 @@ function bind(){
  document.querySelectorAll('[data-need]').forEach(i=>i.onchange=()=>{const x=state.shopping.find(tVal=>tVal.id===i.dataset.need);if(x){x.need=i.checked;save();render()}});
  document.getElementById('recipeSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();const list=state.recipes.filter(r=>`${r.name} ${r.mr} ${r.course}`.toLowerCase().includes(q));document.getElementById('recipeGrid').innerHTML=list.map(recipeCard).join('');document.getElementById('recipeCount').textContent=`${list.length} ${t('recipes.count')}`;bind()});
  document.querySelectorAll('[data-health-category]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-health-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');const q=b.dataset.healthCategory;document.getElementById('healthGrid').innerHTML=(state.healthTips||[]).filter(tVal=>q==='all'||tVal.category===q).map(healthTipCard).join('')});
- document.querySelectorAll('[data-change-assignment]').forEach(sel=>sel.onchange=async e=>{const mealId=e.target.dataset.changeAssignment,memberId=e.target.dataset.memberId;state.mealAssignments=applyDayLevelOverride(state.mealAssignments,memberId,e.target.value,mealId);await save();render()});
+ document.querySelectorAll('[data-change-assignment]').forEach(sel=>sel.onchange=async e=>{const mealId=e.target.dataset.changeAssignment,memberId=e.target.dataset.memberId;const selEl=e.target;const chosen=selEl.value;const member=state.members.find(m=>(m.memberKey||m.id)===memberId);const chosenRecipe=state.recipes.find(r=>r.id===chosen);const rules=state.dietaryRules?.length?state.dietaryRules:DEFAULT_DIETARY_RULES;if(member&&chosenRecipe&&!evaluateRecipeEligibility(member,chosenRecipe,rules).eligible){toast(t('dietary.ineligible_selection','हा पदार्थ या सदस्यासाठी योग्य नाही — दुसरा पर्याय निवडा / Not suitable for this member'));selEl.value=state.mealAssignments.find(a=>a.mealEntryId===mealId&& (a.memberId===memberId||a.memberId===member.id))?.recipeId||'';return;}state.mealAssignments=applyDayLevelOverride(state.mealAssignments,memberId,e.target.value,mealId);await save();render()});
  document.querySelectorAll('[data-revert-assignment]').forEach(b=>b.onclick=async()=>{state.mealAssignments=revertDayLevelOverride(state.mealAssignments,b.dataset.memberId,b.dataset.revertAssignment);await save();render()});
+ document.querySelectorAll('[data-dietary-toggle]').forEach(cb=>cb.onchange=async e=>{
+  const ruleKey=e.target.dataset.dietaryToggle;
+  const memberKey=e.target.dataset.memberKey;
+  const checked=e.target.checked;
+  let rules=state.dietaryRules?.length? state.dietaryRules.map(r=>({...r})) : DEFAULT_DIETARY_RULES.map(r=>({...r, allowedMemberIds:[...r.allowedMemberIds], disallowedMemberIds:[...r.disallowedMemberIds]}));
+  let rule=rules.find(r=>(r.ruleKey||r.ingredientKey)===ruleKey);
+  if(!rule){ // create generic rule for unknown ingredientKey
+    rule={ruleKey:ruleKey, ingredientKey:ruleKey, allowedMemberIds:[], disallowedMemberIds:[], alternatePolicy:'vegetarian-existing', active:true};
+    rules.push(rule);
+  }
+  const lower=memberKey.toLowerCase();
+  rule.allowedMemberIds = (rule.allowedMemberIds||[]).filter(x=>x.toLowerCase()!==lower);
+  rule.disallowedMemberIds = (rule.disallowedMemberIds||[]).filter(x=>x.toLowerCase()!==lower);
+  if(checked){ rule.allowedMemberIds.push(memberKey); } else { rule.disallowedMemberIds.push(memberKey); }
+  // normalize: ensure no duplicate, keep at least one list consistent
+  rule.allowedMemberIds=[...new Set(rule.allowedMemberIds)];
+  rule.disallowedMemberIds=[...new Set(rule.disallowedMemberIds)];
+  state.dietaryRules=rules;
+  ensureAutomaticAssignments();
+  await save();
+  if(remoteReady&&remoteHouseholdId){
+    try{
+      const payload={household_id:remoteHouseholdId, rule_key:rule.ruleKey||rule.ingredientKey, ingredient_key:rule.ingredientKey, allowed_member_ids:rule.allowedMemberIds, disallowed_member_ids:rule.disallowedMemberIds, alternate_policy:rule.alternatePolicy||'vegetarian-existing', active:true};
+      const {error}=await supabase.from('dietary_rules').upsert(payload,{onConflict:'household_id,rule_key'});
+      if(error) throw error;
+    }catch(err){ console.warn('dietary_rules upsert failed',err); toast('Dietary preference sync failed');}
+  }
+  render();
+  toast(t('dietary.saved','आहार पसंती जतन झाली / Dietary preference saved'));
+ });
  document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>setTheme(b.dataset.theme));
  document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>setLanguage(b.dataset.language));
  document.querySelectorAll('[data-tts-key]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const key=b.dataset.ttsKey;if(tts.getCurrentKey()===key&&tts.isSpeaking()){tts.stop();}else{tts.speak({key,mrText:b.dataset.ttsMr,enText:b.dataset.ttsEn,language});}});
