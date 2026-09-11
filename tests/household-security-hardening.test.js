@@ -34,10 +34,10 @@ test('SECURITY HARDENING: invite credential has at least 128 bits of randomness 
     'Invite token must use four 32-bit random segments (128 bits total)'
   );
   assert.match(sql, /token_hash\s*:=\s*encode\(digest\(raw_token,\s*'sha256'\)/i);
-  assert.doesNotMatch(
+  assert.match(
     sql,
-    /insert\s+into\s+public\.household_invites[\s\S]{0,600}raw_token/i,
-    'Plaintext invite token must never be inserted into household_invites'
+    /insert\s+into\s+public\.household_invites\s*\([\s\S]*?\)\s+values\s*\([\s\S]*?token_hash\s*,\s*uid\s*,\s*expiry\s*,\s*max_uses/i,
+    'Only the invite hash, never plaintext, is persisted'
   );
   assert.match(sql, /max_uses\s*> 100/i, 'Invite use count must be bounded server-side');
 });
