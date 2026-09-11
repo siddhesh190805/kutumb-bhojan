@@ -9,7 +9,7 @@ let remoteHouseholdId=null, remoteReady=false, realtimeChannel=null;
 const STORAGE='kutumb-bhojan-state-v1';
 const THEME_STORAGE='kutumb-bhojan-theme-v1';
 const LANGUAGE_STORAGE='kutumb-bhojan-language-v1';
-const slots=['Breakfast','Lunch','Snack','Dinner'];
+const slots=['Breakfast','Lunch','Dinner','Snack'];
 const slotMr={Breakfast:'नाश्ता',Lunch:'दुपारचे जेवण',Snack:'अल्पोपहार',Dinner:'रात्रीचे जेवण'};
 const icon={Breakfast:'🍳',Lunch:'🍛',Snack:'🥜',Dinner:'🍽️'};
 const mr={
@@ -42,7 +42,7 @@ if(!state.uiContent||(Array.isArray(state.uiContent)&&!state.uiContent.length)||
 if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEFAULT_FREQUENCY_RULES;
 let contentProvider=createContentProvider(state.uiContent);
 state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,state.recipeIngredients||[],state.ingredientCatalog||[]));
-let page='today';let selectedDate=new Date().toISOString().slice(0,10);let selectedRecipe=null;let toastTimer;
+let page='today';let selectedDate=new Date().toLocaleDateString('en-CA');let selectedRecipe=null;let toastTimer;
 let theme=localStorage.getItem(THEME_STORAGE)||'system';
 let language=localStorage.getItem(LANGUAGE_STORAGE)||'both';
 let cloudRefreshTimer=null;
@@ -111,7 +111,7 @@ async function loadDerivedShopping(){
 }
 async function loadRemote(){
  const [a,b,c,d,e,f,g,h,i,j,k,rules,l,uiRes,freqRes]=await Promise.all([
-  supabase.from('meal_entries').select('*').eq('household_id',remoteHouseholdId),
+  supabase.from('meal_entries').select('*').eq('household_id',remoteHouseholdId).order('meal_date').order('slot'),
   supabase.from('recipes').select('*').eq('household_id',remoteHouseholdId),
   supabase.from('family_members').select('*').eq('household_id',remoteHouseholdId).order('sort_order'),
   supabase.from('shopping_items').select('*').eq('household_id',remoteHouseholdId),
@@ -467,7 +467,7 @@ function oilSnapshot(){
 function targetCards(){return (state.healthTargets||[]).filter(x=>x.id!=='household_oil_planning').slice(0,4).map(tVal=>`<article class="target-mini"><span>${esc(tVal.category)}</span><strong>${esc(tVal.valueText||tVal.value)} ${esc(tVal.unit||'')}</strong><b>${esc(t(tVal.mrLabel,tVal.label))}</b><small>${esc(t(tVal.mrContext,tVal.context))}</small></article>`).join('')}
 
 function today(){
- const meals=state.meals.filter(x=>x.date===selectedDate);
+ const meals=state.meals.filter(x=>x.date===selectedDate).sort((a,b)=> slots.indexOf(a.slot) - slots.indexOf(b.slot));
  const tasks=state.prep.filter(x=>x.date===selectedDate);
  const buy=state.shopping.filter(x=>x.need&&!x.purchased).length;
  const tip=state.healthTips?.[0];
@@ -521,14 +521,14 @@ function today(){
 
 function calendar(){
  const month=selectedDate.slice(0,7);
- const dates=[...new Set(state.meals.filter(x=>x.date.startsWith(month)).map(x=>x.date))];
+ const dates=[...new Set(state.meals.filter(x=>x.date.startsWith(month)).map(x=>x.date))].sort();
  return `${head(t('calendar.kicker'),t('calendar.title'),t('calendar.subtitle'))}
  <div class="toolbar">
   <input id="month" type="month" value="${month}">
   <span>${dates.length} ${t('calendar.days')} · ${dates.length*4} ${t('calendar.meal_entries')}</span>
  </div>
  <div class="calendar-grid">${dates.map(d=>`<button class="calendar-day ${d===selectedDate?'selected':''}" data-select-date="${d}"><strong>${new Date(d+'T00:00:00').getDate()}</strong><span>${fmt(d)}</span><em>4 ${t('calendar.meals')}</em></button>`).join('')}</div>
- <div class="selected-day"><h3>${dateLabel(selectedDate)}</h3>${state.meals.filter(x=>x.date===selectedDate).map(mealCard).join('')}</div>`;
+ <div class="selected-day"><h3>${dateLabel(selectedDate)}</h3>${state.meals.filter(x=>x.date===selectedDate).sort((a,b)=> slots.indexOf(a.slot) - slots.indexOf(b.slot)).map(mealCard).join('')}</div>`;
 }
 
 function recipesView(){
@@ -1309,7 +1309,7 @@ tts.onStateChange(({ key, isSpeaking })=>{
  });
 });
 
-function shiftDay(delta){const d=new Date(selectedDate+'T00:00:00');d.setUTCDate(d.getUTCDate()+delta);selectedDate=d.toISOString().slice(0,10);render()}
+function shiftDay(delta){const d=new Date(selectedDate+'T00:00:00');d.setDate(d.getDate()+delta);selectedDate=d.toLocaleDateString('en-CA');render()}
 applyTheme();
 applyLanguage();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(err=>console.warn('service worker unavailable',err)));}

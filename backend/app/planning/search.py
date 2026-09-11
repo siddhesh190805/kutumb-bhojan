@@ -108,7 +108,7 @@ def run_bounded_beam_search(
     Returns (winning_plan, final_beam).
     """
     catalog = recipes_catalog or []
-    slots_order = ["Breakfast", "Lunch", "Snack", "Dinner"]
+    slots_order = ["Breakfast", "Lunch", "Dinner", "Snack"]
     catalog_by_slot: dict[str, list[Recipe]] = {
         s: [r for r in catalog if is_slot_compatible(r, s)] for s in slots_order
     }
