@@ -75,6 +75,7 @@ class PlanningEngine:
         dietary_rules: list[DietaryRule] | None = None,
         frequency_rules: list[FrequencyRule] | None = None,
         existing_history: dict[str, Recipe] | None = None,
+        member_histories: dict[str, dict[str, Recipe]] | None = None,
         unavailable_ingredients: list[str] | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> PlanningResponse:
@@ -93,6 +94,7 @@ class PlanningEngine:
             dietary_rules=d_rules,
             frequency_rules=f_rules,
             existing_history=existing_history,
+            member_histories=member_histories,
             unavailable_ingredients=unavailable_ingredients,
         )
 

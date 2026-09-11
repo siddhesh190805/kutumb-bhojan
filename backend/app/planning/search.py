@@ -2,11 +2,10 @@ from datetime import datetime, timedelta
 from typing import Any
 from backend.app.domain.models import Recipe, FamilyMember, DietaryRule, FrequencyRule
 from backend.app.domain.rules import recipe_contains_ingredient
-from backend.app.planning.constraints import evaluate_hard_constraints
+from backend.app.domain.seasonality import get_current_season
+from backend.app.planning.constraints import evaluate_hard_constraints, is_slot_compatible
 from backend.app.planning.scoring import score_candidate
 from backend.app.planning.explanations import build_explanation
-
-
 from backend.app.planning.diversity import RollingDiversityTracker
 
 
@@ -16,6 +15,7 @@ class PartialPlan:
         cumulative_score: float = 0.0,
         slots: list[dict[str, Any]] | None = None,
         planned_meals_by_key: dict[str, Recipe] | None = None,
+        meal_records: list[tuple[int, str, str, Recipe]] | None = None,
         dates_with_paneer: set[str] | None = None,
         paneer_counts_by_month: dict[str, int] | None = None,
         diversity_tracker: RollingDiversityTracker | None = None,
@@ -25,6 +25,19 @@ class PartialPlan:
         self.planned_meals_by_key = dict(planned_meals_by_key or {})
         self.dates_with_paneer = set(dates_with_paneer or set())
         self.paneer_counts_by_month = dict(paneer_counts_by_month or {})
+        if meal_records is not None:
+            self.meal_records = list(meal_records)
+        else:
+            self.meal_records = []
+            for k, r in self.planned_meals_by_key.items():
+                parts = k.split("-")
+                if len(parts) >= 4:
+                    d_s = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                    s_s = parts[3]
+                    try:
+                        self.meal_records.append((datetime.strptime(d_s, "%Y-%m-%d").toordinal(), d_s, s_s, r))
+                    except Exception:
+                        pass
         self.diversity_tracker = (
             diversity_tracker.copy()
             if diversity_tracker
@@ -36,6 +49,7 @@ class PartialPlan:
             cumulative_score=self.cumulative_score,
             slots=list(self.slots),
             planned_meals_by_key=dict(self.planned_meals_by_key),
+            meal_records=list(self.meal_records),
             dates_with_paneer=set(self.dates_with_paneer),
             paneer_counts_by_month=dict(self.paneer_counts_by_month),
             diversity_tracker=self.diversity_tracker.copy(),
@@ -48,6 +62,7 @@ class PartialPlan:
         recipe: Recipe,
         step_score: float,
         explanation: dict[str, Any],
+        target_ordinal: int | None = None,
     ) -> None:
         key = f"{target_date}-{slot}"
         self.cumulative_score += step_score
@@ -59,7 +74,13 @@ class PartialPlan:
             "explanation": explanation,
         })
         self.planned_meals_by_key[key] = recipe
-        self.diversity_tracker.record_meal(target_date, slot, recipe)
+        if target_ordinal is None:
+            try:
+                target_ordinal = datetime.strptime(target_date, "%Y-%m-%d").toordinal()
+            except Exception:
+                target_ordinal = 0
+        self.meal_records.append((target_ordinal, target_date, slot, recipe))
+        self.diversity_tracker.record_meal(target_date, slot, recipe, target_ordinal=target_ordinal)
 
         if recipe_contains_ingredient(recipe, "paneer"):
             self.dates_with_paneer.add(target_date)
@@ -79,6 +100,7 @@ def run_bounded_beam_search(
     dietary_rules: list[DietaryRule] | None = None,
     frequency_rules: list[FrequencyRule] | None = None,
     existing_history: dict[str, Recipe] | None = None,
+    member_histories: dict[str, dict[str, Any]] | None = None,
     unavailable_ingredients: list[str] | None = None,
 ) -> tuple[PartialPlan, list[PartialPlan]]:
     """
@@ -87,6 +109,9 @@ def run_bounded_beam_search(
     """
     catalog = recipes_catalog or []
     slots_order = ["Breakfast", "Lunch", "Snack", "Dinner"]
+    catalog_by_slot: dict[str, list[Recipe]] = {
+        s: [r for r in catalog if is_slot_compatible(r, s)] for s in slots_order
+    }
 
     # Initial frequency counts from existing history
     initial_dates_with_paneer: set[str] = set()
@@ -121,8 +146,12 @@ def run_bounded_beam_search(
 
     # Step through every day and slot in evaluation_days
     for day_idx in range(evaluation_days):
-        current_date_str = (start_dt + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+        current_dt = start_dt + timedelta(days=day_idx)
+        current_date_str = current_dt.strftime("%Y-%m-%d")
+        curr_ordinal = current_dt.toordinal()
         month_str = current_date_str[:7]
+        is_weekend = current_dt.weekday() in (5, 6)
+        current_season = get_current_season(current_dt)
 
         for slot in slots_order:
             successors: list[PartialPlan] = []
@@ -130,9 +159,10 @@ def run_bounded_beam_search(
             for partial in beam:
                 curr_paneer_month = partial.paneer_counts_by_month.get(month_str, 0)
 
-                # 1. Filter candidates via hard constraints
+                # 1. Filter candidates via hard constraints (pre-filtered by slot)
+                candidate_pool = catalog_by_slot.get(slot, catalog)
                 valid_candidates = []
-                for rec in catalog:
+                for rec in candidate_pool:
                     is_valid, _ = evaluate_hard_constraints(
                         recipe=rec,
                         slot=slot,
@@ -149,9 +179,9 @@ def run_bounded_beam_search(
 
                 # Fallback if no valid candidates found (e.g. strict filtering)
                 if not valid_candidates:
-                    valid_candidates = [r for r in catalog if r.course in ("Lunch/Dinner", slot)]
+                    valid_candidates = [r for r in candidate_pool if r.course in ("Lunch/Dinner", slot)]
 
-                # 2. Score valid candidates
+                # 2. Score valid candidates using precomputed date/ordinal/season
                 scored_candidates = []
                 for cand in valid_candidates:
                     step_score, pos_reasons, cul_benefits, soft_pen = score_candidate(
@@ -161,6 +191,11 @@ def run_bounded_beam_search(
                         recent_meals_by_date_slot=partial.planned_meals_by_key,
                         recent_dates_with_paneer=partial.dates_with_paneer,
                         diversity_tracker=partial.diversity_tracker,
+                        target_ordinal=curr_ordinal,
+                        target_dt=current_dt,
+                        is_weekend=is_weekend,
+                        current_season=current_season,
+                        recent_meal_records=partial.meal_records,
                     )
                     scored_candidates.append((cand, step_score, pos_reasons, cul_benefits, soft_pen))
 
@@ -190,6 +225,7 @@ def run_bounded_beam_search(
                         recipe=cand,
                         step_score=step_score,
                         explanation=explanation,
+                        target_ordinal=curr_ordinal,
                     )
                     successors.append(succ)
 

@@ -10,6 +10,8 @@ from backend.app.infrastructure.repositories.recipe import RecipeRepository
 from backend.app.infrastructure.repositories.household import HouseholdRepository
 from backend.app.infrastructure.repositories.meal_entry import MealHistoryRepository
 from backend.app.infrastructure.repositories.prep_task import PrepTaskRepository
+from backend.app.infrastructure.repositories.seasonality import SeasonalityRepository
+from backend.app.domain.seasonality import set_seasonality_cache, clear_seasonality_cache
 from backend.app.planning.engine import PlanningEngine
 
 router = APIRouter()
@@ -18,6 +20,7 @@ recipe_repo = RecipeRepository(supabase_client)
 household_repo = HouseholdRepository(supabase_client)
 meal_repo = MealHistoryRepository(supabase_client)
 prep_repo = PrepTaskRepository(supabase_client)
+seasonality_repo = SeasonalityRepository(supabase_client)
 
 
 class PlanningPayload(BaseModel):
@@ -53,6 +56,14 @@ def create_plan(
 
     # 2. Load authoritative canonical domain data from Supabase
     try:
+        # Seasonality is canonical from Supabase — load once per request
+        try:
+            seasonality_rows, is_fallback = seasonality_repo.get_all_seasonality(auth_token=auth_token)
+            set_seasonality_cache(seasonality_rows, is_db=not is_fallback)
+        except Exception:
+            # If DB unavailable, retain existing cache but surface warning
+            pass
+
         recipes = recipe_repo.get_recipes(household_id, auth_token=auth_token)
         if not recipes:
             raise HTTPException(status_code=404, detail="No recipes found in canonical database")
@@ -63,17 +74,26 @@ def create_plan(
 
         start_date_str = payload.start_date or date.today().isoformat()
 
-        # 3. Load recent history for repetition avoidance (past 14 days)
+        # 3. Load recent history for repetition avoidance (past 14 days) — via assignments for member-aware diversity
         start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
         history_start = (start_dt - timedelta(days=14)).strftime("%Y-%m-%d")
         history_end = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
         recent_slots = meal_repo.get_meals_in_range(household_id, history_start, history_end, auth_token=auth_token)
 
         history_map = {}
+        member_history: dict[str, dict[str, Any]] = {}
         for s in recent_slots:
             matched_rec = recipe_repo.get_recipe_by_id(household_id, s.recipe_id, auth_token=auth_token)
             if matched_rec:
                 history_map[f"{s.date}-{s.slot}"] = matched_rec
+            # Build per-member history from assignments (canonical)
+            for assign in s.assignments:
+                mid = str(assign.member_id)
+                rid = assign.recipe_id or assign.automatic_recipe_id
+                if rid:
+                    arec = recipe_repo.get_recipe_by_id(household_id, rid, auth_token=auth_token)
+                    if arec:
+                        member_history.setdefault(mid, {})[f"{s.date}-{s.slot}"] = arec
 
         # 4. Generate plan using bounded beam search
         result = planning_engine.generate_plan(
@@ -85,14 +105,25 @@ def create_plan(
             dietary_rules=dietary_rules,
             frequency_rules=frequency_rules,
             existing_history=history_map,
+            member_histories=member_history if member_history else None,
             overrides=payload.overrides,
         )
 
-        # 5. Persist the generated plan and prep tasks
+        # Surface explicit fallback warning if seasonality used seed not DB
+        from backend.app.domain.seasonality import is_seasonality_cache_from_db
+        if not is_seasonality_cache_from_db():
+            result.warnings.append("Seasonality fallback: using seed catalog (DB unavailable)")
+
+        # 5. Persist the generated plan and prep tasks with reconciliation
         try:
             meal_repo.persist_plan(household_id, result.plan, auth_token=auth_token)
             if result.prep_tasks:
-                prep_repo.persist_prep_tasks(household_id, result.prep_tasks, auth_token=auth_token)
+                # Reconcile within visible horizon only
+                viz_start = start_date_str
+                viz_end = (datetime.strptime(start_date_str, "%Y-%m-%d") + timedelta(days=payload.visible_days - 1)).strftime("%Y-%m-%d")
+                # Prep tasks are keyed by task_date (D-1 for soak/ferment, D for batch); expand horizon to capture D-1
+                prep_start = (datetime.strptime(viz_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                prep_repo.reconcile_prep_tasks(household_id, result.prep_tasks, prep_start, viz_end, auth_token=auth_token)
         except Exception as persist_err:
             result.warnings.append(f"Persistence notice: {str(persist_err)}")
 

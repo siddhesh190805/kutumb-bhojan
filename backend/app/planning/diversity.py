@@ -16,20 +16,63 @@ from backend.app.domain.models import Recipe
 
 class RollingDiversityTracker:
     def __init__(self, history_by_date_slot: dict[str, Recipe] | None = None):
-        # Key: YYYY-MM-DD-Slot -> Recipe
-        self.history: dict[str, Recipe] = dict(history_by_date_slot or {})
+        # Store internal records: list of (ordinal, date_str, slot, recipe)
+        self.entries: list[tuple[int, str, str, Recipe]] = []
+        self._cache_ordinal: int | None = None
+        self._cache_by_diff: dict[int, list[tuple[str, Recipe]]] | None = None
 
-    def record_meal(self, target_date: str, slot: str, recipe: Recipe) -> None:
-        self.history[f"{target_date}-{slot}"] = recipe
+        if history_by_date_slot:
+            for key, rec in history_by_date_slot.items():
+                parts = key.split("-")
+                if len(parts) >= 4:
+                    d_str = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                    s_str = parts[3]
+                    try:
+                        d_ord = datetime.strptime(d_str, "%Y-%m-%d").toordinal()
+                        self.entries.append((d_ord, d_str, s_str, rec))
+                    except Exception:
+                        continue
+
+    @property
+    def history(self) -> dict[str, Recipe]:
+        """Backward-compatible dictionary view."""
+        return {f"{d_str}-{s_str}": rec for _, d_str, s_str, rec in self.entries}
+
+    def record_meal(self, target_date: str, slot: str, recipe: Recipe, target_ordinal: int | None = None) -> None:
+        if target_ordinal is None:
+            try:
+                target_ordinal = datetime.strptime(target_date, "%Y-%m-%d").toordinal()
+            except Exception:
+                target_ordinal = 0
+        self.entries.append((target_ordinal, target_date, slot, recipe))
+        self._cache_ordinal = None
+        self._cache_by_diff = None
 
     def copy(self) -> "RollingDiversityTracker":
-        return RollingDiversityTracker(self.history)
+        new_tracker = RollingDiversityTracker()
+        new_tracker.entries = list(self.entries)
+        return new_tracker
+
+    def _get_recent_by_day_diff(self, curr_ordinal: int) -> dict[int, list[tuple[str, Recipe]]]:
+        if self._cache_ordinal == curr_ordinal and self._cache_by_diff is not None:
+            return self._cache_by_diff
+
+        recent: dict[int, list[tuple[str, Recipe]]] = {}
+        for d_ord, _, s_str, rec in self.entries:
+            diff = curr_ordinal - d_ord
+            if 0 <= diff <= 5:
+                recent.setdefault(diff, []).append((s_str, rec))
+
+        self._cache_ordinal = curr_ordinal
+        self._cache_by_diff = recent
+        return recent
 
     def evaluate_candidate_diversity(
         self,
         candidate: Recipe,
         slot: str,
         target_date: str,
+        target_ordinal: int | None = None,
     ) -> tuple[float, list[str], list[str]]:
         """
         Evaluate rolling diversity score and explanations for a candidate recipe.
@@ -39,24 +82,12 @@ class RollingDiversityTracker:
         positive_reasons: list[str] = []
         soft_penalties: list[str] = []
 
-        curr_dt = datetime.strptime(target_date, "%Y-%m-%d")
-        curr_ordinal = curr_dt.toordinal()
+        if target_ordinal is None:
+            curr_ordinal = datetime.strptime(target_date, "%Y-%m-%d").toordinal()
+        else:
+            curr_ordinal = target_ordinal
 
-        # Collect recent meals by day difference (0 to 5 days back)
-        recent_by_day_diff: dict[int, list[tuple[str, Recipe]]] = {}
-        for key, rec in self.history.items():
-            parts = key.split("-")
-            if len(parts) < 4:
-                continue
-            d_str = f"{parts[0]}-{parts[1]}-{parts[2]}"
-            s_str = parts[3]
-            try:
-                d_ord = datetime.strptime(d_str, "%Y-%m-%d").toordinal()
-                diff = curr_ordinal - d_ord
-                if 0 <= diff <= 5:
-                    recent_by_day_diff.setdefault(diff, []).append((s_str, rec))
-            except Exception:
-                continue
+        recent_by_day_diff = self._get_recent_by_day_diff(curr_ordinal)
 
         fp = candidate.food_profile
         cand_legumes = set(fp.legume_identities) if fp else set()
@@ -66,56 +97,74 @@ class RollingDiversityTracker:
         cand_form = candidate.practical_metadata.meal_form
         cand_grain_str = candidate.practical_metadata.primary_grain
 
-        # 1. Pulse / Legume Rotation across 4-day window
+        # 1. Pulse / Legume Rotation across 4-day window + same-day check
         if cand_legumes:
-            yesterday_meals = recent_by_day_diff.get(1, [])
-            yesterday_legumes = set()
-            for _, r in yesterday_meals:
-                if r.food_profile:
-                    yesterday_legumes.update(r.food_profile.legume_identities)
+            # Same-day check (e.g. dinner following lunch on the same day)
+            today_meals = recent_by_day_diff.get(0, [])
+            today_legumes = set()
+            for s, r in today_meals:
+                if s != slot and r.food_profile:
+                    today_legumes.update(r.food_profile.legume_identities)
 
-            overlap = cand_legumes.intersection(yesterday_legumes)
-            if overlap:
-                pulse_name = next(iter(overlap)).replace("_", " ").title()
+            same_day_overlap = cand_legumes.intersection(today_legumes)
+            if same_day_overlap:
+                pulse_name = next(iter(same_day_overlap)).replace("_", " ").title()
                 score_delta -= 15.0
-                soft_penalties.append(f"Same pulse ({pulse_name}) served yesterday")
+                soft_penalties.append(f"Same pulse ({pulse_name}) served earlier today")
             else:
-                # Check if this pulse has NOT been served in the past 4 days
-                past_4day_legumes = set()
-                for d in range(1, 5):
-                    for _, r in recent_by_day_diff.get(d, []):
-                        if r.food_profile:
-                            past_4day_legumes.update(r.food_profile.legume_identities)
-                novel_pulses = cand_legumes.difference(past_4day_legumes)
-                if novel_pulses:
-                    pulse_name = next(iter(novel_pulses)).replace("_", " ").title()
-                    score_delta += 12.0
-                    positive_reasons.append(f"Rotates pulse variety with {pulse_name}")
+                yesterday_meals = recent_by_day_diff.get(1, [])
+                yesterday_legumes = set()
+                for _, r in yesterday_meals:
+                    if r.food_profile:
+                        yesterday_legumes.update(r.food_profile.legume_identities)
+
+                overlap = cand_legumes.intersection(yesterday_legumes)
+                if overlap:
+                    pulse_name = next(iter(overlap)).replace("_", " ").title()
+                    score_delta -= 15.0
+                    soft_penalties.append(f"Same pulse ({pulse_name}) served yesterday")
+                else:
+                    # Check if this pulse has NOT been served in the past 4 days (and not today)
+                    past_4day_legumes = set(today_legumes)
+                    for d in range(1, 5):
+                        for _, r in recent_by_day_diff.get(d, []):
+                            if r.food_profile:
+                                past_4day_legumes.update(r.food_profile.legume_identities)
+                    novel_pulses = cand_legumes.difference(past_4day_legumes)
+                    if novel_pulses:
+                        pulse_name = next(iter(novel_pulses)).replace("_", " ").title()
+                        score_delta += 12.0
+                        positive_reasons.append(f"Rotates pulse variety with {pulse_name}")
 
         # 2. Grain & Millet Diversity
-        # If candidate features millet (jowar, bajra, ragi or has_whole_grain_or_millet)
         has_millet = (
             cand_grain_str == "millet"
             or bool(cand_grains.intersection({"jowar", "bajra", "ragi"}))
             or (fp is not None and fp.has_whole_grain_or_millet and "wheat" not in cand_grains and "rice" not in cand_grains)
         )
         if has_millet:
-            # Check if last 2 days had mostly wheat/rice
             recent_had_millet = False
-            for d in (1, 2):
-                for _, r in recent_by_day_diff.get(d, []):
+            for d in (0, 1, 2):
+                for s, r in recent_by_day_diff.get(d, []):
+                    if d == 0 and s == slot:
+                        continue
                     if r.practical_metadata.primary_grain == "millet":
                         recent_had_millet = True
                         break
+                if recent_had_millet:
+                    break
             if not recent_had_millet:
                 score_delta += 10.0
                 millet_name = next(iter(cand_grains.intersection({"jowar", "bajra", "ragi"})), "Millet").title()
                 positive_reasons.append(f"Introduces wholesome millet diversity ({millet_name})")
 
-        # 3. Vegetable Category Balance in Lunch/Dinner
+        # 3. Vegetable Category Balance in Lunch/Dinner (including same-day)
         if slot.lower() in ("lunch", "dinner") and cand_vegs:
-            # Check vegetable categories covered in past 48 hours (diff 1 and 2)
             past_vegs = set()
+            # Include earlier today
+            for s, r in recent_by_day_diff.get(0, []):
+                if s != slot and s.lower() in ("lunch", "dinner") and r.food_profile:
+                    past_vegs.update(r.food_profile.vegetable_identities)
             for d in (1, 2):
                 for s, r in recent_by_day_diff.get(d, []):
                     if s.lower() in ("lunch", "dinner") and r.food_profile:

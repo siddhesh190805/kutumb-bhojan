@@ -5,15 +5,17 @@ from backend.app.domain.rules import recipe_contains_ingredient, evaluate_member
 
 def is_slot_compatible(recipe: Recipe, slot: str) -> bool:
     """Check if the recipe course/category matches the target meal slot."""
-    course = (recipe.meal_category or recipe.course or "").strip()
+    # Check both meal_category and course — either may carry the slot info; prefer explicit but check both
+    combined = f"{recipe.meal_category or ''} {recipe.course or ''}".strip()
+    cl = combined.lower()
     s = slot.strip().lower()
 
     if s == "breakfast":
-        return any(c in course.lower() for c in ("breakfast", "नाश्ता"))
+        return any(c in cl for c in ("breakfast", "नाश्ता"))
     elif s in ("lunch", "dinner"):
-        return any(c in course.lower() for c in ("lunch", "dinner", "दुपार", "रात्र"))
+        return any(c in cl for c in ("lunch", "dinner", "दुपार", "रात्र"))
     elif s == "snack":
-        return any(c in course.lower() for c in ("snack", "breakfast", "अल्पोपहार"))
+        return any(c in cl for c in ("snack", "breakfast", "अल्पोपहार"))
     return True
 
 

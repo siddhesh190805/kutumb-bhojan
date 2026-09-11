@@ -158,6 +158,20 @@ class SupabaseClient:
                 raise RuntimeError(f"Supabase PATCH {table} failed: {resp.status_code} {resp.text}")
             return resp.json() if resp.text else []
 
+    def delete_by_key(
+        self,
+        table: str,
+        params: dict[str, Any],
+        auth_token: str | None = None,
+    ) -> None:
+        """Delete rows matching params."""
+        url = f"{self.base_url}/rest/v1/{table}"
+        headers = self._get_auth_headers(auth_token)
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.delete(url, params=params, headers=headers)
+            if resp.status_code not in (200, 204):
+                raise RuntimeError(f"Supabase DELETE {table} failed: {resp.status_code} {resp.text}")
+
     def rpc(
         self,
         function_name: str,
