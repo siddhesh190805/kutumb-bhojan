@@ -17,6 +17,45 @@ class SeasonalityRepository:
         self.client = client
         self._cache: dict[str, list[dict[str, Any]]] = {}
 
+    async def aget_all_seasonality(
+        self,
+        region: str = "maharashtra_western_india",
+        auth_token: str | None = None,
+        http_client=None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        cache_key = f"__all__:{region}"
+        if cache_key in self._cache:
+            return self._cache[cache_key], False
+        try:
+            rows = await self.client.aget(
+                "ingredient_seasonality",
+                {
+                    "region": f"eq.{region}",
+                    "order": "ingredient_key,season",
+                },
+                auth_token=auth_token,
+                http_client=http_client,
+            )
+            if rows:
+                self._cache[cache_key] = rows
+                return rows, False
+            raise RuntimeError("ingredient_seasonality returned 0 rows")
+        except Exception as exc:
+            fallback_rows: list[dict[str, Any]] = []
+            for ikey, items in CANONICAL_SEASONALITY_CATALOG.items():
+                for item in items:
+                    fallback_rows.append({
+                        "ingredient_key": ikey,
+                        "season": item.get("season"),
+                        "region": region,
+                        "availability_status": item.get("availability_status", "available"),
+                        "culinary_suitability": item.get("culinary_suitability", "neutral"),
+                        "provenance": "cultural_culinary_heuristic",
+                        "metadata_status": "provisional",
+                        "_fallback": True,
+                    })
+            return fallback_rows, True
+
     def get_all_seasonality(
         self,
         region: str = "maharashtra_western_india",

@@ -1,3 +1,5 @@
+import asyncio
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Depends
 from typing import Any
 from pydantic import BaseModel, Field, ConfigDict
@@ -35,7 +37,7 @@ class PlanningPayload(BaseModel):
 
 @router.post("/plans", response_model=PlanningResponse)
 @router.post("/api/planning/plans", response_model=PlanningResponse)
-def create_plan(
+async def create_plan(
     payload: PlanningPayload,
     authorization: str | None = Header(default=None),
 ) -> PlanningResponse:
@@ -43,95 +45,133 @@ def create_plan(
     if authorization and authorization.startswith("Bearer "):
         auth_token = authorization.split("Bearer ", 1)[1].strip()
 
-    # 1. Resolve & verify household authorization
-    household_id = payload.household_id
-    if not household_id:
+    # One request-scoped AsyncClient with pooling (max 10, keepalive 5, timeout 15s per invariant)
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0),
+        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        http2=False,
+    ) as http_client:
+        # 1. Resolve & verify household authorization (sequential dependency)
+        household_id = payload.household_id
+        if not household_id:
+            try:
+                household_id = await supabase_client.abootstrap_household(auth_token=auth_token, http_client=http_client)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to bootstrap household: {str(e)}")
+        else:
+            if not await supabase_client.averify_household_member(household_id, auth_token=auth_token, http_client=http_client):
+                raise HTTPException(status_code=403, detail="Cross-household access denied")
+
+        # 2. Load authoritative canonical domain data concurrently (bounded 5)
         try:
-            household_id = supabase_client.bootstrap_household(auth_token=auth_token)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to bootstrap household: {str(e)}")
-    else:
-        if not supabase_client.verify_household_member(household_id, auth_token=auth_token):
-            raise HTTPException(status_code=403, detail="Cross-household access denied")
+            # Parallel independent reads after household_id resolved
+            sem = asyncio.Semaphore(5)
 
-    # 2. Load authoritative canonical domain data from Supabase
-    try:
-        # Seasonality is canonical from Supabase — load once per request
-        try:
-            seasonality_rows, is_fallback = seasonality_repo.get_all_seasonality(auth_token=auth_token)
-            set_seasonality_cache(seasonality_rows, is_db=not is_fallback)
-        except Exception:
-            # If DB unavailable, retain existing cache but surface warning
-            pass
+            async def with_sem(coro):
+                async with sem:
+                    return await coro
 
-        recipes = recipe_repo.get_recipes(household_id, auth_token=auth_token)
-        if not recipes:
-            raise HTTPException(status_code=404, detail="No recipes found in canonical database")
+            # Create tasks for independent branches
+            seasonality_task = with_sem(seasonality_repo.aget_all_seasonality(auth_token=auth_token, http_client=http_client))
+            recipes_task = with_sem(recipe_repo.aget_recipes(household_id, auth_token=auth_token, http_client=http_client))
+            members_task = with_sem(household_repo.aget_family_members(household_id, auth_token=auth_token, http_client=http_client))
+            frequency_task = with_sem(household_repo.aget_frequency_rules(household_id, auth_token=auth_token, http_client=http_client))
+            dietary_task = with_sem(household_repo.aget_dietary_rules(household_id, auth_token=auth_token, http_client=http_client))
 
-        members = household_repo.get_family_members(household_id, auth_token=auth_token)
-        frequency_rules = household_repo.get_frequency_rules(household_id, auth_token=auth_token)
-        dietary_rules = household_repo.get_dietary_rules(household_id, auth_token=auth_token)
+            # Meal history depends on dates, create after computing start_date_str
+            start_date_str = payload.start_date or date.today().isoformat()
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            history_start = (start_dt - timedelta(days=14)).strftime("%Y-%m-%d")
+            history_end = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+            history_task = with_sem(meal_repo.aget_meals_in_range(household_id, history_start, history_end, auth_token=auth_token, http_client=http_client))
 
-        start_date_str = payload.start_date or date.today().isoformat()
+            # Gather all independent reads
+            seasonality_res, recipes, members, frequency_rules, dietary_rules, recent_slots = await asyncio.gather(
+                seasonality_task, recipes_task, members_task, frequency_task, dietary_task, history_task
+            )
 
-        # 3. Load recent history for repetition avoidance (past 14 days) — via assignments for member-aware diversity
-        start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-        history_start = (start_dt - timedelta(days=14)).strftime("%Y-%m-%d")
-        history_end = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-        recent_slots = meal_repo.get_meals_in_range(household_id, history_start, history_end, auth_token=auth_token)
+            # Handle seasonality cache and warning
+            try:
+                seasonality_rows, is_fallback = seasonality_res
+                set_seasonality_cache(seasonality_rows, is_db=not is_fallback)
+            except Exception:
+                pass
 
-        history_map = {}
-        member_history: dict[str, dict[str, Any]] = {}
-        for s in recent_slots:
-            matched_rec = recipe_repo.get_recipe_by_id(household_id, s.recipe_id, auth_token=auth_token)
-            if matched_rec:
-                history_map[f"{s.date}-{s.slot}"] = matched_rec
-            # Build per-member history from assignments (canonical)
-            for assign in s.assignments:
-                mid = str(assign.member_id)
-                rid = assign.recipe_id or assign.automatic_recipe_id
-                if rid:
-                    arec = recipe_repo.get_recipe_by_id(household_id, rid, auth_token=auth_token)
+            if not recipes:
+                raise HTTPException(status_code=404, detail="No recipes found in canonical database")
+
+            # Deterministic normalization
+            recipes = sorted(recipes, key=lambda r: str(r.id))
+            recent_slots = sorted(recent_slots, key=lambda s: (s.date, s.slot))
+
+            # O(1) catalog_by_id for history enrichment (deterministic, no DB)
+            catalog_by_id: dict[str, Any] = {}
+            for r in recipes:
+                catalog_by_id[str(r.id)] = r
+                if getattr(r, "recipe_key", None):
+                    catalog_by_id[str(r.recipe_key)] = r
+
+            def lookup_recipe(rid: str | None):
+                if not rid:
+                    return None
+                # Direct id, then try lower, then fallback to linear for name (rare)
+                rec = catalog_by_id.get(str(rid))
+                if rec:
+                    return rec
+                # Preserve missing-recipe handling: try name lower
+                low = str(rid).lower()
+                for r in recipes:
+                    if r.name.lower() == low:
+                        return r
+                return None
+
+            history_map = {}
+            member_history: dict[str, dict[str, Any]] = {}
+            for s in recent_slots:
+                matched_rec = lookup_recipe(s.recipe_id)
+                if matched_rec:
+                    history_map[f"{s.date}-{s.slot}"] = matched_rec
+                for assign in s.assignments:
+                    mid = str(assign.member_id)
+                    rid = assign.recipe_id or assign.automatic_recipe_id
+                    arec = lookup_recipe(rid)
                     if arec:
                         member_history.setdefault(mid, {})[f"{s.date}-{s.slot}"] = arec
 
-        # 4. Generate plan using bounded beam search
-        result = planning_engine.generate_plan(
-            start_date=start_date_str,
-            visible_days=payload.visible_days,
-            evaluation_days=payload.evaluation_days,
-            recipes=recipes,
-            members=members,
-            dietary_rules=dietary_rules,
-            frequency_rules=frequency_rules,
-            existing_history=history_map,
-            member_histories=member_history if member_history else None,
-            overrides=payload.overrides,
-        )
+            # 4. Generate plan (CPU, no I/O)
+            result = planning_engine.generate_plan(
+                start_date=start_date_str,
+                visible_days=payload.visible_days,
+                evaluation_days=payload.evaluation_days,
+                recipes=recipes,
+                members=members,
+                dietary_rules=dietary_rules,
+                frequency_rules=frequency_rules,
+                existing_history=history_map,
+                member_histories=member_history if member_history else None,
+                overrides=payload.overrides,
+            )
 
-        # Surface explicit fallback warning if seasonality used seed not DB
-        from backend.app.domain.seasonality import is_seasonality_cache_from_db
-        if not is_seasonality_cache_from_db():
-            result.warnings.append("Seasonality fallback: using seed catalog (DB unavailable)")
+            from backend.app.domain.seasonality import is_seasonality_cache_from_db
+            if not is_seasonality_cache_from_db():
+                result.warnings.append("Seasonality fallback: using seed catalog (DB unavailable)")
 
-        # 5. Persist the generated plan and prep tasks with reconciliation
-        try:
-            meal_repo.persist_plan(household_id, result.plan, auth_token=auth_token)
-            if result.prep_tasks:
-                # Reconcile within visible horizon only
-                viz_start = start_date_str
-                viz_end = (datetime.strptime(start_date_str, "%Y-%m-%d") + timedelta(days=payload.visible_days - 1)).strftime("%Y-%m-%d")
-                # Prep tasks are keyed by task_date (D-1 for soak/ferment, D for batch); expand horizon to capture D-1
-                prep_start = (datetime.strptime(viz_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-                prep_repo.reconcile_prep_tasks(household_id, result.prep_tasks, prep_start, viz_end, auth_token=auth_token)
-        except Exception as persist_err:
-            result.warnings.append(f"Persistence notice: {str(persist_err)}")
+            # 5. Persist (must remain on correctness path, same http_client)
+            try:
+                await meal_repo.apersist_plan(household_id, result.plan, auth_token=auth_token, http_client=http_client)
+                if result.prep_tasks:
+                    viz_start = start_date_str
+                    viz_end = (datetime.strptime(start_date_str, "%Y-%m-%d") + timedelta(days=payload.visible_days - 1)).strftime("%Y-%m-%d")
+                    prep_start = (datetime.strptime(viz_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                    await prep_repo.areconcile_prep_tasks(household_id, result.prep_tasks, prep_start, viz_end, auth_token=auth_token, http_client=http_client)
+            except Exception as persist_err:
+                result.warnings.append(f"Persistence notice: {str(persist_err)}")
 
-        return result
+            return result
 
-    except HTTPException:
-        raise
-    except DomainError as de:
-        raise HTTPException(status_code=400, detail={"code": de.code, "message": de.message})
-    except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err))
+        except HTTPException:
+            raise
+        except DomainError as de:
+            raise HTTPException(status_code=400, detail={"code": de.code, "message": de.message})
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
