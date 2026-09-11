@@ -67,7 +67,13 @@ async function saveHouseholdSettings(){
  const oilMonthlyTargetMl=Math.max(100,Number(current.oilMonthlyTargetMl)||3000);
  const displayName=current.displayName||'कुटुंब भोजन';
  state.householdSettings={...current,householdSize,oilStockMl,oilMonthlyTargetMl,displayName};
- localStorage.setItem(STORAGE,JSON.stringify(state));
+ try{
+  localStorage.setItem(STORAGE,JSON.stringify(state));
+ }catch(err){
+  console.warn('localStorage save failed',err);
+  toast(t('msg.local_save_failed','Local save failed / स्थानिक जतन अयशस्वी'));
+  return false;
+ }
  if(!remoteReady||!remoteHouseholdId)return true;
  try{
   const payload={household_id:remoteHouseholdId,display_name:displayName,household_size:householdSize,oil_stock_ml:oilStockMl,oil_monthly_target_ml:oilMonthlyTargetMl,updated_at:new Date().toISOString()};
