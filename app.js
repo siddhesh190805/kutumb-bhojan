@@ -74,21 +74,21 @@ async function saveHouseholdSettings(){
   const {error}=await supabase.from('household_settings').upsert(payload,{onConflict:'household_id'});
   if(error)throw error;
   return true;
- }catch(err){
-  console.warn('saveHouseholdSettings failed',err);
-  toast('Cloud sync failed / सेटिंग्ज क्लाउडमध्ये जतन होऊ शकली नाही');
-  return false;
- }
+  }catch(err){
+   console.warn('saveHouseholdSettings failed',err);
+   toast(t('msg.cloud_sync_failed','Cloud sync failed / सेटिंग्ज क्लाउडमध्ये जतन होऊ शकली नाही'));
+   return false;
+  }
 }
 async function syncLocalChanges(){
  if(!remoteHouseholdId)return;
  const rows=buildRemoteRows(state,remoteHouseholdId);
  const conflicts={'meal_entries':'household_id,meal_date,slot','recipes':'household_id,recipe_key','family_members':'household_id,member_key','shopping_items':'household_id,item_key','prep_tasks':'household_id,task_key'};
  const batches=REMOTE_TABLES.map(table=>[table,rows[table],conflicts[table]]);
- for(const [table,payload,onConflict] of batches){
-  const {error}=await supabase.from(table).upsert(payload,{onConflict});
-  if(error){console.warn(`sync failed for ${table}`,error);toast('Cloud sync error · क्लाउड जतन अयशस्वी');return false;}
- }
+  for(const [table,payload,onConflict] of batches){
+   const {error}=await supabase.from(table).upsert(payload,{onConflict});
+   if(error){console.warn(`sync failed for ${table}`,error);toast(t('msg.cloud_sync_error','Cloud sync error · क्लाउड जतन अयशस्वी'));return false;}
+  }
  return true;
 }
 async function loadDerivedShopping(){
@@ -243,12 +243,12 @@ async function initCloud(){
   await syncPhase2();
   subscribeToHousehold();
   render();
- }catch(err){
-  console.error('Cloud initialization failed',err);
-  cleanupCloud();
-  render();
-  toast('Cloud sync unavailable · क्लाउड sync उपलब्ध नाही. Local data चालू आहे.');
- }finally{cloudInitializing=false;}
+  }catch(err){
+   console.error('Cloud initialization failed',err);
+   cleanupCloud();
+   render();
+   toast(t('msg.cloud_sync_unavailable','Cloud sync unavailable · क्लाउड sync उपलब्ध नाही. Local data चालू आहे.'));
+  }finally{cloudInitializing=false;}
 }
 supabase.auth.onAuthStateChange((_event,session)=>{
  if(session&&!remoteReady)initCloud();
@@ -1284,7 +1284,7 @@ function bind(){
       const payload={household_id:remoteHouseholdId, rule_key:rule.ruleKey||rule.ingredientKey, ingredient_key:rule.ingredientKey, allowed_member_ids:rule.allowedMemberIds, disallowed_member_ids:rule.disallowedMemberIds, alternate_policy:rule.alternatePolicy||'vegetarian-existing', active:true};
       const {error}=await supabase.from('dietary_rules').upsert(payload,{onConflict:'household_id,rule_key'});
       if(error) throw error;
-    }catch(err){ console.warn('dietary_rules upsert failed',err); toast('Dietary preference sync failed');}
+    }catch(err){ console.warn('dietary_rules upsert failed',err); toast(t('msg.dietary_sync_failed','Dietary preference sync failed / आहार पसंती sync अयशस्वी'));}
   }
   render();
   toast(t('dietary.saved','आहार पसंती जतन झाली / Dietary preference saved'));
