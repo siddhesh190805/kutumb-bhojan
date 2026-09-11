@@ -242,9 +242,32 @@ async function initCloud(){
    if(error)throw error;
    session=data.session;
   }
-  const {data,error}=await supabase.rpc('bootstrap_household',{household_name:'कुटुंब भोजन'});
-  if(error)throw error;
-  remoteHouseholdId=data;
+  let urlJoinCode=null;
+  try{
+   const params=new URLSearchParams(window.location.search);
+   urlJoinCode=params.get('join')||params.get('invite');
+  }catch(_e){}
+  if(urlJoinCode){
+   const {data:joinedId,error:joinErr}=await supabase.rpc('join_household',{invite_token:urlJoinCode});
+   if(!joinErr&&joinedId){
+    remoteHouseholdId=joinedId;
+    toast(t('msg.household_joined','Family household joined · कुटुंबात यशस्वीरित्या सामील झाले'));
+    try{
+     const url=new URL(window.location.href);
+     url.searchParams.delete('join');
+     url.searchParams.delete('invite');
+     window.history.replaceState({},'',url.pathname+(url.search?url.search:''));
+    }catch(_e){}
+   }else{
+    console.warn('join_household from URL failed',joinErr);
+    toast(t('msg.invite_invalid','Invalid or expired invite code · अमान्य किंवा कालबाह्य कोड'));
+   }
+  }
+  if(!remoteHouseholdId){
+   const {data,error}=await supabase.rpc('bootstrap_household',{household_name:'कुटुंब भोजन'});
+   if(error)throw error;
+   remoteHouseholdId=data;
+  }
   await loadRemote();
   await loadDerivedShopping();
   remoteReady=true;
@@ -920,6 +943,18 @@ function settings(){
    <p class="muted">${t('settings.cloud_note')}</p>
   </div>
   <div class="panel">
+   <h3>🔗 ${t('settings.family_sharing_title', 'Family Sharing / कुटुंब जोडणी')}</h3>
+   <p>${t('settings.family_sharing_desc', 'नवीन फोन किंवा family member ला जोडण्यासाठी Invite Code वापरा. / Use an invite code to securely connect another family device.')}</p>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <button class="primary" data-generate-invite>${t('settings.generate_invite_btn', 'Generate Invite Code / जोडणी कोड तयार करा')}</button>
+    <span id="activeInviteDisplay" style="font-weight:bold;letter-spacing:1px"></span>
+   </div>
+   <div style="display:flex;gap:8px;align-items:center">
+    <input id="joinInviteInput" placeholder="${esc(t('settings.enter_invite_ph', 'Enter invite code (e.g. KB-XXXX-XXXX) / कोड प्रविष्ट करा'))}" style="max-width:260px">
+    <button class="secondary" data-join-invite>${t('settings.join_btn', 'Join / सामील व्हा')}</button>
+   </div>
+  </div>
+  <div class="panel">
    <h3>↺ ${t('settings.starter_title')}</h3>
    <p>${t('settings.starter_desc')}</p>
    <button class="danger" data-reset>${t('settings.reset_btn')}</button>
@@ -1315,6 +1350,49 @@ function bind(){
  document.querySelector('[data-export]')?.addEventListener('click',()=>{const blob=new Blob([JSON.stringify(buildBackupPayload(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`kutumb-bhojan-backup-${new Date().toISOString().slice(0,10)}.json`;a.click()});
  document.getElementById('importFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=async()=>{try{const x=JSON.parse(r.result);if(x.version!==1&&x.version!==2)throw new Error('Invalid version');state={...clone(starter),...x,version:2};if(!state.uiContent||(Array.isArray(state.uiContent)&&!state.uiContent.length)||(typeof state.uiContent==='object'&&Object.keys(state.uiContent).length===0)) state.uiContent=CANONICAL_UI_CONTENT;if(!state.frequencyRules||!state.frequencyRules.length) state.frequencyRules=DEFAULT_FREQUENCY_RULES;contentProvider=createContentProvider(state.uiContent);state.recipes=(state.recipes||[]).map(rec=>buildStructuredRecipe(rec,state.recipeIngredients||[],state.ingredientCatalog||[]));ensureAutomaticAssignments();localStorage.setItem(STORAGE,JSON.stringify(state));if(remoteReady){await saveHouseholdSettings();await syncLocalChanges();await syncPhase2();}render();toast(t('msg.backup_restored'))}catch(err){console.warn('Import error',err);toast(t('msg.invalid_backup'))}};r.readAsText(file)});
  document.querySelector('[data-reset]')?.addEventListener('click',()=>{if(confirm(t('msg.confirm_reset'))){state=clone(starter);state.recipes=state.recipes.map(r=>buildStructuredRecipe(r,[],[]));ensureAutomaticAssignments();save();if(remoteReady)saveHouseholdSettings();render()}});
+ document.querySelector('[data-generate-invite]')?.addEventListener('click',async()=>{
+  if(!remoteReady||!remoteHouseholdId){
+   toast(t('msg.cloud_not_ready','Cloud sync not connected / क्लाउड sync उपलब्ध नाही'));
+   return;
+  }
+  try{
+   const {data,error}=await supabase.rpc('create_household_invite',{target_household:remoteHouseholdId,expires_in_hours:48,max_uses:5});
+   if(error||!data?.token)throw (error||new Error('invite generation failed'));
+   const el=document.getElementById('activeInviteDisplay');
+   if(el){
+    el.innerHTML=`<code>${esc(data.token)}</code> <button type="button" class="secondary" id="copyInviteBtn" style="padding:2px 8px;font-size:0.85rem">📋 ${t('common.copy','Copy')}</button>`;
+    document.getElementById('copyInviteBtn')?.addEventListener('click',()=>{
+     const shareUrl=window.location.origin+window.location.pathname+'?join='+encodeURIComponent(data.token);
+     if(navigator.clipboard?.writeText){navigator.clipboard.writeText(shareUrl).catch(()=>navigator.clipboard.writeText(data.token));}
+     toast(t('msg.code_copied','Invite code copied / जोडणी कोड कॉपी केला'));
+    });
+   }
+   toast(t('msg.invite_created','Invite code generated / जोडणी कोड तयार झाला'));
+  }catch(err){
+   console.warn('create_household_invite failed',err);
+   toast(t('msg.invite_failed','Could not create invite code / जोडणी कोड तयार करता आला नाही'));
+  }
+ });
+ document.querySelector('[data-join-invite]')?.addEventListener('click',async()=>{
+  const input=document.getElementById('joinInviteInput');
+  const code=input?.value?.trim();
+  if(!code){
+   toast(t('msg.enter_valid_code','Please enter an invite code / कृपया कोड प्रविष्ट करा'));
+   return;
+  }
+  try{
+   const {data:joinedId,error}=await supabase.rpc('join_household',{invite_token:code});
+   if(error||!joinedId)throw (error||new Error('join failed'));
+   remoteHouseholdId=joinedId;
+   cleanupCloud();
+   await initCloud();
+   toast(t('msg.household_joined','Family household joined · कुटुंबात यशस्वीरित्या सामील झाले'));
+   render();
+  }catch(err){
+   console.warn('join_household failed',err);
+   toast(t('msg.invite_invalid','Invalid or expired invite code · अमान्य किंवा कालबाह्य कोड'));
+  }
+ });
 }
 
 tts.onStateChange(({ key, isSpeaking })=>{
