@@ -2,6 +2,24 @@
 -- Harden invite credentials, make active-household selection durable, and quarantine
 -- ownerless legacy households created by the pre-isolation anonymous bootstrap.
 
+-- Harden the membership predicate used by SECURITY DEFINER RPCs.
+create or replace function public.is_household_member(target_household uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.household_members hm
+    where hm.household_id = target_household
+      and hm.user_id = auth.uid()
+  );
+$$;
+
+revoke all on function public.is_household_member(uuid) from public, anon;
+grant execute on function public.is_household_member(uuid) to authenticated;
+
 -- 1. Server-side active-household preference. This is never used without membership verification.
 create table if not exists public.user_household_preferences (
   user_id uuid primary key references auth.users(id) on delete cascade,
