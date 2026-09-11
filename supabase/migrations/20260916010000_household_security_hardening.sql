@@ -23,7 +23,7 @@ create or replace function public.set_active_household(target_household uuid)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -53,7 +53,7 @@ create or replace function public.bootstrap_household(household_name text defaul
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   h uuid;
@@ -132,7 +132,7 @@ create or replace function public.create_household_invite(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -185,7 +185,7 @@ create or replace function public.join_household(invite_token text)
 returns uuid
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
