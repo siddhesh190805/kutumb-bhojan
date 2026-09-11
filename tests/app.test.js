@@ -26,12 +26,13 @@ test('family entry flow uses anonymous auth and has no email OTP or sign-out UI'
   assert.match(source,/Login\/OTP लागत नाही/);
 });
 
-test('Supabase bootstrap shares the designated family household for anonymous sessions',()=>{
+test('Supabase bootstrap isolates households and supports secure family invite sharing',()=>{
   const fs=require('node:fs');
   const schema=fs.readFileSync(require('node:path').join(__dirname,'..','supabase.schema.sql'),'utf8');
-  assert.match(schema,/auth\.jwt\(\)->>'is_anonymous'/);
-  assert.match(schema,/where name = 'कुटुंब भोजन'/);
-  assert.match(schema,/on conflict \(household_id,user_id\) do nothing/);
+  assert.match(schema,/create or replace function public\.bootstrap_household/);
+  assert.doesNotMatch(schema,/where name = 'कुटुंब भोजन'[\s\S]*?insert into public\.household_members/);
+  assert.match(schema,/create table if not exists public\.household_invites/);
+  assert.match(schema,/create or replace function public\.join_household/);
 });
 
 test('health guide and dynamic household settings are implemented without hard-coded health-card content',()=>{
