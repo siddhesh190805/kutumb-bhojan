@@ -255,7 +255,41 @@ $$;
 revoke all on function public.join_household(text) from public, anon;
 grant execute on function public.join_household(text) to authenticated;
 
--- 5. Quarantine ownerless households created by the insecure shared-anonymous flow.
+-- 5. Revoke RPC uses the same hardened SECURITY DEFINER search path.
+create or replace function public.revoke_household_invite(invite_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  uid uuid := auth.uid();
+  inv_household uuid;
+begin
+  if uid is null then
+    raise exception 'authentication required';
+  end if;
+
+  select household_id into inv_household
+  from public.household_invites
+  where id = invite_id;
+
+  if not found or not public.is_household_member(inv_household) then
+    raise exception 'unauthorized or invite not found';
+  end if;
+
+  update public.household_invites
+  set revoked = true
+  where id = invite_id;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.revoke_household_invite(uuid) from public, anon;
+grant execute on function public.revoke_household_invite(uuid) to authenticated;
+
+-- 6. Quarantine ownerless households created by the insecure shared-anonymous flow.
 -- Securely preserve the earliest member as owner, then revoke every later member.
 -- This stops legacy anonymous members retaining access after the new isolation fix.
 do $$
