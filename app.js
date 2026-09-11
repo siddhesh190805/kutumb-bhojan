@@ -54,8 +54,10 @@ let reasonChangeModalMeal=null;
 
 async function save(){
  state.updatedAt=new Date().toISOString();
- localStorage.setItem(STORAGE,JSON.stringify(state));
- if(remoteReady&&!cloudApplyingRemote){await syncLocalChanges();await syncPhase2();}
+ try{ localStorage.setItem(STORAGE,JSON.stringify(state)); }catch(err){ console.warn('localStorage save failed',err); toast(t('msg.local_save_failed','Local save failed / स्थानिक जतन अयशस्वी')); return; }
+ if(remoteReady&&!cloudApplyingRemote){
+  try{ await syncLocalChanges(); await syncPhase2(); }catch(err){ console.warn('cloud sync failed after save',err); toast(t('msg.sync_pending','Changes saved locally · बदल स्थानिक जतन झाले, sync प्रलंबित')); return; }
+ }
  toast(t('msg.saved','Saved'));
 }
 async function saveHouseholdSettings(){
@@ -251,6 +253,14 @@ async function initCloud(){
 supabase.auth.onAuthStateChange((_event,session)=>{
  if(session&&!remoteReady)initCloud();
  if(!session){cleanupCloud();initCloud();}
+});
+window.addEventListener('online', ()=>{
+ toast(t('msg.online_restored','Connection restored · कनेक्शन परत आले'));
+ if(!remoteReady) initCloud();
+ else scheduleRemoteRefresh();
+});
+window.addEventListener('offline', ()=>{
+ toast(t('msg.offline_mode','Offline mode · ऑफलाइन मोड — बदल स्थानिक जतन होतील'));
 });
 function toast(msg){clearTimeout(toastTimer);const el=document.getElementById('toast');if(!el)return;el.textContent='✓ '+msg;el.classList.add('show');toastTimer=setTimeout(()=>el.classList.remove('show'),1600)}
 function esc(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
