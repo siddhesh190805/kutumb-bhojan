@@ -90,6 +90,8 @@ class PrepTaskRepository:
                 "notes": t.get("notes"),
                 "source": "planner",
             })
+        # Track compatibility fallback
+        self._last_compat_warning: str | None = None
         if payloads:
             try:
                 await self.client.apost(
@@ -100,8 +102,28 @@ class PrepTaskRepository:
                     on_conflict="household_id,task_key",
                     http_client=http_client,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                err = str(e)
+                is_source_missing = ("source" in err.lower() and ("PGRST204" in err or "Could not find" in err or "schema cache" in err.lower()))
+                if is_source_missing:
+                    # Retry without source column (current production schema)
+                    fallback_payloads = [{k: v for k, v in p.items() if k != "source"} for p in payloads]
+                    try:
+                        await self.client.apost(
+                            "prep_tasks",
+                            fallback_payloads,
+                            auth_token=auth_token,
+                            upsert=True,
+                            on_conflict="household_id,task_key",
+                            http_client=http_client,
+                        )
+                        self._last_compat_warning = "prep_tasks.source migration pending: running in compatibility mode (source column absent)"
+                    except Exception as fe:
+                        # Fallback also failed -> propagate to caller's persistence error path
+                        raise RuntimeError(f"Prep persistence failed (compat fallback): {fe}") from fe
+                else:
+                    # Arbitrary 400 -> do not fallback, propagate
+                    raise
         deleted = 0
         for ekey, erow in existing_by_key.items():
             if ekey not in desired_keys and is_planner_owned(erow) and not bool(erow.get("done")):
@@ -171,6 +193,7 @@ class PrepTaskRepository:
                 "source": "planner",
             })
 
+        self._last_compat_warning = None
         if payloads:
             try:
                 self.client.post(
@@ -180,8 +203,24 @@ class PrepTaskRepository:
                     upsert=True,
                     on_conflict="household_id,task_key",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                err = str(e)
+                is_source_missing = ("source" in err.lower() and ("PGRST204" in err or "Could not find" in err or "schema cache" in err.lower()))
+                if is_source_missing:
+                    fallback_payloads = [{k: v for k, v in p.items() if k != "source"} for p in payloads]
+                    try:
+                        self.client.post(
+                            "prep_tasks",
+                            fallback_payloads,
+                            auth_token=auth_token,
+                            upsert=True,
+                            on_conflict="household_id,task_key",
+                        )
+                        self._last_compat_warning = "prep_tasks.source migration pending: running in compatibility mode (source column absent)"
+                    except Exception as fe:
+                        raise RuntimeError(f"Prep persistence failed (compat fallback): {fe}") from fe
+                else:
+                    raise
 
         # Reconcile obsolete planner-owned uncompleted tasks
         deleted = 0

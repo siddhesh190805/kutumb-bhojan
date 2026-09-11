@@ -212,33 +212,50 @@ class RecipeRepository:
     ) -> list[Recipe]:
         if not refresh and household_id in self._cache:
             return self._cache[household_id]
-        rows = await self.client.aget(
-            "recipes",
-            {"household_id": f"eq.{household_id}"},
-            auth_token=auth_token,
-            http_client=http_client,
-        )
-        if not rows:
-            return []
-        try:
-            ri_rows = await self.client.aget(
-                "recipe_ingredients",
-                {"household_id": f"eq.{household_id}", "order": "sort_order"},
+        # Parallelize three independent HTTP reads (reuse same http_client, bounded by caller's semaphore)
+        import asyncio
+
+        async def _fetch_recipes():
+            return await self.client.aget(
+                "recipes",
+                {"household_id": f"eq.{household_id}"},
                 auth_token=auth_token,
                 http_client=http_client,
             )
-        except Exception:
-            ri_rows = []
-        ing_map: dict[str, str] = {}
-        canonical_ings: list[Any] = []
+
+        async def _fetch_ri():
+            try:
+                return await self.client.aget(
+                    "recipe_ingredients",
+                    {"household_id": f"eq.{household_id}", "order": "sort_order"},
+                    auth_token=auth_token,
+                    http_client=http_client,
+                )
+            except Exception:
+                return []
+
+        async def _fetch_ings():
+            try:
+                from backend.app.infrastructure.repositories.ingredient import IngredientRepository
+                ing_repo = IngredientRepository(self.client)
+                ings = await ing_repo.aget_all(auth_token=auth_token, http_client=http_client)
+                return ings
+            except Exception:
+                return []
+
+        rows, ri_rows, canonical_ings = await asyncio.gather(
+            _fetch_recipes(),
+            _fetch_ri(),
+            _fetch_ings(),
+        )
+        if not rows:
+            return []
+        # Build ing_map after all three complete (CPU dependency)
         try:
-            from backend.app.infrastructure.repositories.ingredient import IngredientRepository
-            ing_repo = IngredientRepository(self.client)
-            canonical_ings = await ing_repo.aget_all(auth_token=auth_token, http_client=http_client)
-            ing_map = {str(i.id): i.canonical_key for i in canonical_ings if i.id}
+            ing_map = {str(i.id): i.canonical_key for i in canonical_ings if i and getattr(i, "id", None)}
         except Exception:
             ing_map = {}
-            canonical_ings = []
+            canonical_ings = canonical_ings if isinstance(canonical_ings, list) else []
         ri_by_recipe: dict[str, list[RecipeIngredient]] = {}
         for r in ri_rows:
             rec_id = str(r.get("recipe_id"))

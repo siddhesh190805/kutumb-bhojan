@@ -164,6 +164,10 @@ async def create_plan(
                     viz_end = (datetime.strptime(start_date_str, "%Y-%m-%d") + timedelta(days=payload.visible_days - 1)).strftime("%Y-%m-%d")
                     prep_start = (datetime.strptime(viz_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
                     await prep_repo.areconcile_prep_tasks(household_id, result.prep_tasks, prep_start, viz_end, auth_token=auth_token, http_client=http_client)
+                    # Surface compat warning if source column missing (current prod schema)
+                    compat_warn = getattr(prep_repo, "_last_compat_warning", None)
+                    if compat_warn:
+                        result.warnings.append(compat_warn)
             except Exception as persist_err:
                 result.warnings.append(f"Persistence notice: {str(persist_err)}")
 
