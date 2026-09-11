@@ -33,7 +33,7 @@ test('SECURITY HARDENING: invite credential has at least 128 bits of randomness 
     /gen_random_bytes\(4\)[\s\S]*gen_random_bytes\(4\)[\s\S]*gen_random_bytes\(4\)[\s\S]*gen_random_bytes\(4\)/i,
     'Invite token must use four 32-bit random segments (128 bits total)'
   );
-  assert.match(sql, /token_hash\s*=\s*encode\(digest\(raw_token,\s*'sha256'\)/i);
+  assert.match(sql, /token_hash\s*:=\s*encode\(digest\(raw_token,\s*'sha256'\)/i);
   assert.doesNotMatch(
     sql,
     /insert\s+into\s+public\.household_invites[\s\S]{0,600}raw_token/i,
