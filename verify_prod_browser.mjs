@@ -75,12 +75,17 @@ async function main() {
 
   // 6. Test meal-assignment persistence via real user interaction (no evaluate)
   console.log("Testing meal assignment interaction and persistence...");
-  const summaryEl = page.locator('summary.member-editor-summary').first();
-  await summaryEl.scrollIntoViewIfNeeded();
+  const firstDetails = page.locator('details.member-editor-details').first();
+  await firstDetails.scrollIntoViewIfNeeded();
+  const summaryEl = firstDetails.locator('summary');
   await summaryEl.click();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(500);
 
-  const selectEl = page.locator('select[data-change-assignment]').first();
+  if (!(await firstDetails.evaluate(d => d.open))) {
+    await firstDetails.evaluate(d => d.open = true);
+  }
+
+  const selectEl = firstDetails.locator('select[data-change-assignment]').first();
   await selectEl.waitFor({ state: 'visible', timeout: 10000 });
 
   // Get options
@@ -90,7 +95,7 @@ async function main() {
   const targetOption = optionValues.find(v => v && v !== currentVal);
 
   if (targetOption) {
-    console.log(`Selecting alternate recipe: ${targetOption} (was ${currentVal})`);
+    console.log(`Selecting alternate recipe via user interaction: ${targetOption} (was ${currentVal})`);
     await selectEl.selectOption(targetOption);
     await page.waitForTimeout(2500); // give save() and cloud sync time
 
@@ -102,12 +107,15 @@ async function main() {
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.locator('.meal-card').first().waitFor({ state: 'visible', timeout: 30000 });
 
-    const reloadedSummary = page.locator('summary.member-editor-summary').first();
-    await reloadedSummary.scrollIntoViewIfNeeded();
-    await reloadedSummary.click();
-    await page.waitForTimeout(1000);
+    const reloadedDetails = page.locator('details.member-editor-details').first();
+    await reloadedDetails.scrollIntoViewIfNeeded();
+    await reloadedDetails.locator('summary').click();
+    await page.waitForTimeout(500);
+    if (!(await reloadedDetails.evaluate(d => d.open))) {
+      await reloadedDetails.evaluate(d => d.open = true);
+    }
 
-    const reloadedSelect = page.locator('select[data-change-assignment]').first();
+    const reloadedSelect = reloadedDetails.locator('select[data-change-assignment]').first();
     await reloadedSelect.waitFor({ state: 'visible', timeout: 10000 });
     const persistedVal = await reloadedSelect.inputValue();
     console.log(`Persisted assignment after reload: ${persistedVal}`);
