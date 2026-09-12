@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 from backend.app.main import app
+from backend.app.domain.canonical import CANONICAL_RECIPES, CANONICAL_FAMILY_MEMBERS
 
 
 @pytest.fixture
@@ -32,7 +33,16 @@ def test_api_planning_plans_without_candidate_recipes(client):
         "visibleDays": 3,
         "evaluationDays": 5,
     }
-    res = client.post("/api/planning/plans", json=payload, headers=AUTH_HEADERS)
+    with patch("backend.app.api.planning.supabase_client.abootstrap_household", return_value="test-household"), \
+         patch("backend.app.api.planning.recipe_repo.aget_recipes", return_value=CANONICAL_RECIPES), \
+         patch("backend.app.api.planning.household_repo.aget_family_members", return_value=CANONICAL_FAMILY_MEMBERS), \
+         patch("backend.app.api.planning.household_repo.aget_frequency_rules", return_value=[]), \
+         patch("backend.app.api.planning.household_repo.aget_dietary_rules", return_value=[]), \
+         patch("backend.app.api.planning.meal_repo.aget_meals_in_range", return_value=[]), \
+         patch("backend.app.api.planning.seasonality_repo.aget_all_seasonality", return_value=([], True)), \
+         patch("backend.app.api.planning.meal_repo.apersist_plan", return_value=None), \
+         patch("backend.app.api.planning.prep_repo.areconcile_prep_tasks", return_value=(0, 0, 0)):
+        res = client.post("/api/planning/plans", json=payload, headers=AUTH_HEADERS)
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
@@ -59,7 +69,12 @@ def test_api_meal_change_endpoint(client):
         },
         "reason": "want_lighter",
     }
-    res = client.post("/api/planning/meal-change", json=payload, headers=AUTH_HEADERS)
+    with patch("backend.app.api.meal_change.supabase_client.bootstrap_household", return_value="test-household"), \
+         patch("backend.app.api.meal_change.recipe_repo.get_recipes", return_value=CANONICAL_RECIPES), \
+         patch("backend.app.api.meal_change.recipe_repo.get_recipe_by_id", return_value=None), \
+         patch("backend.app.api.meal_change.household_repo.get_family_members", return_value=CANONICAL_FAMILY_MEMBERS), \
+         patch("backend.app.api.meal_change.household_repo.get_dietary_rules", return_value=[]):
+        res = client.post("/api/planning/meal-change", json=payload, headers=AUTH_HEADERS)
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
