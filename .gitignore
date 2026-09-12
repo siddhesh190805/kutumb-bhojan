@@ -10,3 +10,5 @@ supabase/.temp/
 __pycache__/
 *.py[cod]
 .venv/
+test-results/
+.pytest_cache/

@@ -43,11 +43,27 @@ test('P0 REGRESSION: four fixed toasts use t() bilingual resolver', () => {
 test('P0 REGRESSION: startup render does not throw ReferenceError', async () => {
   // Simulate minimal startup: import app.js via jsdom is heavy, so verify via static analysis
   // that render() is defined after t and contentProvider, and initCloud is at bottom
-  const renderPos = appSource.indexOf('function render(){');
-  const tPos = appSource.indexOf('function t(keyOrMr');
-  const providerPos = appSource.indexOf('let contentProvider=');
+  const normalizedApp = appSource.replace(/\r\n/g, '\n');
+  const renderPos = normalizedApp.indexOf('function render(){');
+  const tPos = normalizedApp.indexOf('function t(keyOrMr');
+  const providerPos = normalizedApp.indexOf('let contentProvider=');
   assert.ok(tPos > 0, 't must exist');
   assert.ok(providerPos > 0, 'contentProvider must exist');
   assert.ok(renderPos > tPos, 'render must be after t (hoisted, but ensures no TDZ)');
-  assert.ok(appSource.includes("render();\ninitCloud();"), 'app must call render then initCloud at bottom');
+  assert.ok(normalizedApp.includes("render();\ninitCloud();"), 'app must call render then initCloud at bottom');
 });
+
+test('P0 REGRESSION: evaluateRecipeEligibility is imported and assignmentOptions does not encounter undefined symbols', () => {
+  const normalizedApp = appSource.replace(/\r\n/g, '\n');
+  // 1. Verify import statement includes evaluateRecipeEligibility
+  const importMatch = normalizedApp.match(/import\s*\{([^}]+)\}\s*from\s*'\.\/sync\.js'/);
+  assert.ok(importMatch, 'app.js must import from ./sync.js');
+  const importedSymbols = importMatch[1].split(',').map(s => s.trim());
+  assert.ok(importedSymbols.includes('evaluateRecipeEligibility'), 'evaluateRecipeEligibility must be in sync.js imports');
+
+  // 2. Verify assignmentOptions body references evaluateRecipeEligibility directly
+  const fnMatch = normalizedApp.match(/function\s+assignmentOptions\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(fnMatch, 'assignmentOptions function must exist');
+  assert.match(fnMatch[1], /evaluateRecipeEligibility\s*\(/, 'assignmentOptions must call evaluateRecipeEligibility');
+});
+

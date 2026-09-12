@@ -2694,8 +2694,22 @@ function mapRecipeIngredients(rows) {
   return (rows || []).map(x => ({id:x.id,recipeId:x.recipe_id,ingredientId:x.ingredient_id,ingredientKey:x.ingredient_key || x.canonical_key,quantity:Number(x.quantity),unit:x.unit,displayText:x.display_text,preparation:x.preparation,sortOrder:x.sort_order}));
 }
 function mapDietaryRules(rows) { return (rows||[]).filter(x=>x.active!==false).map(x=>({id:x.id,ruleKey:x.rule_key,ingredientKey:x.ingredient_key,allowedMemberIds:Array.isArray(x.allowed_member_ids)?x.allowed_member_ids:[],disallowedMemberIds:Array.isArray(x.disallowed_member_ids)?x.disallowed_member_ids:[],alternatePolicy:x.alternate_policy})); }
-function mapMealAssignments(rows) {
-  return (rows || []).map(x => ({id:x.id,mealEntryId:x.meal_entry_id,memberId:x.member_id,recipeId:x.recipe_id,portionFactor:Number(x.portion_factor||1),assignmentSource:x.assignment_source,automaticRecipeId:x.automatic_recipe_id,overrideRecipeId:x.override_recipe_id,overrideReason:x.override_reason}));
+function mapMealAssignments(rows, context = {}) {
+  const mealMap = context.mealMap || (context.meals ? new Map(context.meals.map(m => [m.id || m.remoteId, m.meal_date ? `${m.meal_date}-${m.slot}` : m.id])) : null);
+  const memberMap = context.memberMap || (context.members ? new Map(context.members.map(m => [m.id || m.remoteId, m.member_key || m.id])) : null);
+  const recipeMap = context.recipeMap || (context.recipes ? new Map(context.recipes.map(r => [r.id || r.remoteId, r.recipe_key || r.id])) : null);
+
+  return (rows || []).map(x => ({
+    id: x.id,
+    mealEntryId: (mealMap && mealMap.get(x.meal_entry_id)) || x.meal_entry_id,
+    memberId: (memberMap && memberMap.get(x.member_id)) || x.member_id,
+    recipeId: (recipeMap && recipeMap.get(x.recipe_id)) || x.recipe_id,
+    portionFactor: Number(x.portion_factor || 1),
+    assignmentSource: x.assignment_source,
+    automaticRecipeId: (recipeMap && recipeMap.get(x.automatic_recipe_id)) || x.automatic_recipe_id,
+    overrideRecipeId: (recipeMap && recipeMap.get(x.override_recipe_id)) || x.override_recipe_id,
+    overrideReason: x.override_reason
+  }));
 }
 function buildStructuredRecipe(recipe, recipeIngredients, ingredientCatalog) {
   const mapped = (recipeIngredients || []).filter(x => x.recipeId === recipe.id);

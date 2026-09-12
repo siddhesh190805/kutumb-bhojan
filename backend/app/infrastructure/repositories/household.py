@@ -1,5 +1,6 @@
 from backend.app.domain.models import FamilyMember, FrequencyRule, DietaryRule
 from backend.app.domain.rules import DEFAULT_DIETARY_RULES, DEFAULT_FREQUENCY_RULES
+from backend.app.domain.canonical import CANONICAL_FAMILY_MEMBERS
 from backend.app.infrastructure.supabase import SupabaseClient, supabase_client
 
 
@@ -8,12 +9,17 @@ class HouseholdRepository:
         self.client = client
 
     async def aget_family_members(self, household_id: str, auth_token: str | None = None, http_client=None) -> list[FamilyMember]:
-        rows = await self.client.aget(
-            "family_members",
-            {"household_id": f"eq.{household_id}", "order": "sort_order"},
-            auth_token=auth_token,
-            http_client=http_client,
-        )
+        try:
+            rows = await self.client.aget(
+                "family_members",
+                {"household_id": f"eq.{household_id}", "order": "sort_order"},
+                auth_token=auth_token,
+                http_client=http_client,
+            )
+        except Exception:
+            rows = []
+        if not rows:
+            return [m.model_copy() for m in CANONICAL_FAMILY_MEMBERS]
         return [
             FamilyMember(
                 id=str(r.get("id")),
@@ -32,11 +38,16 @@ class HouseholdRepository:
         ]
 
     def get_family_members(self, household_id: str, auth_token: str | None = None) -> list[FamilyMember]:
-        rows = self.client.get(
-            "family_members",
-            {"household_id": f"eq.{household_id}", "order": "sort_order"},
-            auth_token=auth_token,
-        )
+        try:
+            rows = self.client.get(
+                "family_members",
+                {"household_id": f"eq.{household_id}", "order": "sort_order"},
+                auth_token=auth_token,
+            )
+        except Exception:
+            rows = []
+        if not rows:
+            return [m.model_copy() for m in CANONICAL_FAMILY_MEMBERS]
         return [
             FamilyMember(
                 id=str(r.get("id")),

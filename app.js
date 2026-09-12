@@ -163,7 +163,13 @@ async function loadRemote(){
  try{
   state=mapRemoteState({members:c.data,meals:a.data,recipes:b.data,shopping:d.data,prep:e.data},state);
   state.healthTips=mapHealthTips(f.data); state.healthTargets=mapHealthTargets(g.data); state.householdSettings=mapHouseholdSettings(h.data)||state.householdSettings;
-  state.nutritionEducation=mapNutritionEducation(l.data); state.ingredientCatalog=mapIngredientCatalog(i.data); state.recipeIngredients=mapRecipeIngredients(j.data); state.mealAssignments=mapMealAssignments(k.data); state.dietaryRules=mapDietaryRules(rules.data);
+  state.nutritionEducation=mapNutritionEducation(l.data); state.ingredientCatalog=mapIngredientCatalog(i.data); state.recipeIngredients=mapRecipeIngredients(j.data);
+  const mealMap=new Map((a.data||[]).map(m=>[m.id,\-\]));
+  const memberMap=new Map((c.data||[]).map(m=>[m.id,m.member_key]));
+  const recipeMap=new Map((b.data||[]).map(r=>[r.id,r.recipe_key]));
+  const remoteAssignments=mapMealAssignments(k.data,{mealMap,memberMap,recipeMap});
+  if(remoteAssignments.length){state.mealAssignments=remoteAssignments;}
+  state.dietaryRules=mapDietaryRules(rules.data);
   if(uiRes.data && uiRes.data.length){
    state.uiContent=mapUiContent(uiRes.data);
    contentProvider=createContentProvider(state.uiContent);

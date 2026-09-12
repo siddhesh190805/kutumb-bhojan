@@ -6,7 +6,8 @@ import path from 'node:path';
 const source = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf8');
 
 function householdSettingsBody() {
-  const match = source.match(/async function saveHouseholdSettings\(\)\s*\{([\s\S]*?)\n\}\nasync function syncLocalChanges/);
+  const normalized = source.replace(/\r\n/g, '\n');
+  const match = normalized.match(/async function saveHouseholdSettings\(\)\s*\{([\s\S]*?)\n\}\nasync function syncLocalChanges/);
   assert.ok(match, 'saveHouseholdSettings function body must be discoverable');
   return match[1];
 }
