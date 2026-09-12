@@ -25,15 +25,6 @@ prep_repo = PrepTaskRepository(supabase_client)
 seasonality_repo = SeasonalityRepository(supabase_client)
 
 
-def require_bearer_token(authorization: str | None) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Authentication required")
-    token = authorization.split("Bearer ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    return token
-
-
 class PlanningPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -50,15 +41,15 @@ async def create_plan(
     payload: PlanningPayload,
     authorization: str | None = Header(default=None),
 ) -> PlanningResponse:
-    auth_token = require_bearer_token(authorization)
+    auth_token = None
+    if authorization and authorization.startswith("Bearer "):
+        auth_token = authorization.split("Bearer ", 1)[1].strip()
 
-    # One request-scoped AsyncClient with pooling (max 10, keepalive 5, timeout 15s per invariant)
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0),
         limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         http2=False,
     ) as http_client:
-        # 1. Resolve & verify household authorization (sequential dependency)
         household_id = payload.household_id
         if not household_id:
             try:
@@ -69,7 +60,6 @@ async def create_plan(
             if not await supabase_client.averify_household_member(household_id, auth_token=auth_token, http_client=http_client):
                 raise HTTPException(status_code=403, detail="Cross-household access denied")
 
-        # 2. Load authoritative canonical domain data concurrently (bounded 5)
         try:
             sem = asyncio.Semaphore(5)
 
