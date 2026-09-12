@@ -8,6 +8,9 @@ def client():
     return TestClient(app)
 
 
+AUTH_HEADERS = {"Authorization": "Bearer test_token"}
+
+
 def test_api_hello(client):
     res = client.get("/api/hello")
     assert res.status_code == 200
@@ -23,17 +26,16 @@ def test_api_hello_method_not_allowed(client):
 
 
 def test_api_planning_plans_without_candidate_recipes(client):
-    # Notice: Client does NOT pass candidateRecipes!
     payload = {
         "startDate": "2026-09-07",
         "visibleDays": 3,
         "evaluationDays": 5,
     }
-    res = client.post("/api/planning/plans", json=payload)
+    res = client.post("/api/planning/plans", json=payload, headers=AUTH_HEADERS)
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
-    assert len(data["plan"]) == 12  # 3 days * 4 slots
+    assert len(data["plan"]) == 12
     assert data["evaluation_summary"]["total_meals_planned"] == 12
 
     first_slot = data["plan"][0]
@@ -41,15 +43,13 @@ def test_api_planning_plans_without_candidate_recipes(client):
     assert "recipe_id" in first_slot
     assert "explanation" in first_slot
     assert "assignments" in first_slot
-    assert len(first_slot["assignments"]) == 4  # 4 family members
+    assert len(first_slot["assignments"]) == 4
 
 
 def test_api_meal_change_endpoint(client):
-    # 1. Missing currentMeal returns 400
     res_bad = client.post("/api/planning/meal-change", json={})
     assert res_bad.status_code == 400
 
-    # 2. Valid meal change request
     payload = {
         "currentMeal": {
             "date": "2026-09-07",
@@ -58,7 +58,7 @@ def test_api_meal_change_endpoint(client):
         },
         "reason": "want_lighter",
     }
-    res = client.post("/api/planning/meal-change", json=payload)
+    res = client.post("/api/planning/meal-change", json=payload, headers=AUTH_HEADERS)
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
@@ -68,12 +68,14 @@ def test_api_meal_change_endpoint(client):
 
 
 def test_api_tts_speak(client):
-    # 1. Missing or empty text returns 422
     res_bad = client.post("/api/tts/speak", json={"text": ""})
     assert res_bad.status_code == 422
 
-    # 2. Text without provider key returns fallback gracefully
-    res = client.post("/api/tts/speak", json={"text": "आज रात्री मूग डाळ खिचडी आणि दही", "language": "mr-IN"})
+    res = client.post(
+        "/api/tts/speak",
+        json={"text": "आज रात्री मूग डाळ खिचडी आणि दही", "language": "mr-IN"},
+        headers=AUTH_HEADERS,
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["fallback"] is True
