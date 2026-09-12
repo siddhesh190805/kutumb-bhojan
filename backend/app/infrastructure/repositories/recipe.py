@@ -62,6 +62,43 @@ class RecipeRepository:
         except Exception:
             rows, ri_rows, canonical_ings = [], [], []
         if not rows:
+            recipes_payload = [
+                {
+                    "household_id": household_id,
+                    "recipe_key": r.recipe_key or r.id,
+                    "name": r.name,
+                    "marathi_name": r.marathi_name or r.name,
+                    "course": r.course,
+                    "time_text": r.time_text,
+                    "ingredients": r.ingredients,
+                    "method": r.method,
+                    "protein": getattr(r, "protein", None),
+                    "fibre": getattr(r, "fibre", None),
+                    "calories": getattr(r, "calories", None),
+                    "oil": getattr(r, "oil", None),
+                    "note": r.note,
+                    "description": getattr(r, "description", None),
+                    "marathi_description": getattr(r, "marathi_description", None),
+                    "meal_category": getattr(r, "meal_category", None),
+                    "meal_role": getattr(r, "meal_role", None),
+                    "servings": getattr(r, "servings", 4),
+                    "cooking_method": getattr(r, "cooking_method", None),
+                    "dietary_flags": r.dietary_flags.model_dump() if hasattr(r.dietary_flags, "model_dump") else (r.dietary_flags or {}),
+                    "nutrition_metadata": r.nutrition_metadata.model_dump() if hasattr(r.nutrition_metadata, "model_dump") else (r.nutrition_metadata or {}),
+                }
+                for r in CANONICAL_RECIPES
+            ]
+            try:
+                await self.client.apost(
+                    "recipes",
+                    recipes_payload,
+                    auth_token=auth_token,
+                    upsert=True,
+                    on_conflict="household_id,recipe_key",
+                    http_client=http_client,
+                )
+            except Exception:
+                pass
             return [r.model_copy() for r in CANONICAL_RECIPES]
         # Build ing_map after all three complete (CPU dependency)
         try:

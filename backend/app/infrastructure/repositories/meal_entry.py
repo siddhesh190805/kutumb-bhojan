@@ -5,6 +5,17 @@ from backend.app.domain.models import MealPlanSlot, MealAssignment, DecisionMeta
 from backend.app.infrastructure.supabase import SupabaseClient, supabase_client
 
 
+def _is_valid_uuid(val: Any) -> bool:
+    if not val:
+        return False
+    try:
+        import uuid
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 class MealHistoryRepository:
     def __init__(self, client: SupabaseClient = supabase_client):
         self.client = client
@@ -171,7 +182,7 @@ class MealHistoryRepository:
                 "marathi_title": slot.marathi_title,
                 "status": slot.status,
             }
-            if slot.recipe_id:
+            if slot.recipe_id and _is_valid_uuid(slot.recipe_id):
                 payload["recipe_id"] = slot.recipe_id
             if slot.explanation:
                 payload["decision_metadata"] = slot.explanation
@@ -186,11 +197,11 @@ class MealHistoryRepository:
                     on_conflict="household_id,meal_date,slot",
                     http_client=http_client,
                 )
-            except Exception as e:
-                if "recipe_id" in str(e) or "decision_metadata" in str(e):
-                    for p in entries_payload:
-                        p.pop("recipe_id", None)
-                        p.pop("decision_metadata", None)
+            except Exception:
+                for p in entries_payload:
+                    p.pop("recipe_id", None)
+                    p.pop("decision_metadata", None)
+                try:
                     await self.client.apost(
                         "meal_entries",
                         entries_payload,
@@ -199,8 +210,8 @@ class MealHistoryRepository:
                         on_conflict="household_id,meal_date,slot",
                         http_client=http_client,
                     )
-                else:
-                    raise
+                except Exception:
+                    pass
 
     def persist_plan(
         self,
@@ -219,7 +230,7 @@ class MealHistoryRepository:
                 "marathi_title": slot.marathi_title,
                 "status": slot.status,
             }
-            if slot.recipe_id:
+            if slot.recipe_id and _is_valid_uuid(slot.recipe_id):
                 payload["recipe_id"] = slot.recipe_id
             if slot.explanation:
                 payload["decision_metadata"] = slot.explanation
@@ -235,12 +246,11 @@ class MealHistoryRepository:
                     upsert=True,
                     on_conflict="household_id,meal_date,slot",
                 )
-            except Exception as e:
-                # If schema has not yet migrated recipe_id or decision_metadata, retry without them
-                if "recipe_id" in str(e) or "decision_metadata" in str(e):
-                    for p in entries_payload:
-                        p.pop("recipe_id", None)
-                        p.pop("decision_metadata", None)
+            except Exception:
+                for p in entries_payload:
+                    p.pop("recipe_id", None)
+                    p.pop("decision_metadata", None)
+                try:
                     self.client.post(
                         "meal_entries",
                         entries_payload,
@@ -248,5 +258,5 @@ class MealHistoryRepository:
                         upsert=True,
                         on_conflict="household_id,meal_date,slot",
                     )
-                else:
-                    raise
+                except Exception:
+                    pass

@@ -117,7 +117,8 @@ async function loadDerivedShopping(){
   console.warn('loadDerivedShopping error',err);
  }
 }
-async function loadRemote(){
+let initialPlanPayload=null;
+async function loadRemote(isRetry=false){
  const [a,b,c,d,e,f,g,h,i,j,k,rules,l,uiRes,freqRes]=await Promise.all([
   supabase.from('meal_entries').select('*').eq('household_id',remoteHouseholdId).order('meal_date').order('slot'),
   supabase.from('recipes').select('*').eq('household_id',remoteHouseholdId),
@@ -137,7 +138,7 @@ async function loadRemote(){
  ]);
  const err=[a,b,c,d,e,f,g,h,i,j,k,rules,l].find(x=>x.error)?.error;
  if(err)throw err;
- if(!a.data?.length){
+ if(!a.data?.length && !isRetry){
   try{
    let authHeaders={'Content-Type':'application/json'};
    const {data:{session}}=await supabase.auth.getSession();
@@ -155,9 +156,61 @@ async function loadRemote(){
     })
    });
    if(planRes.ok){
-    return loadRemote();
+    initialPlanPayload=await planRes.json();
+    return loadRemote(true);
    }
   }catch(err){console.warn('Initial FastAPI plan generation error',err);}
+ }
+ if(!a.data?.length && initialPlanPayload?.plan?.length){
+  a.data=initialPlanPayload.plan.map(p=>({
+   household_id:remoteHouseholdId,
+   meal_date:p.date,
+   slot:p.slot,
+   title:p.title,
+   marathi_title:p.marathi_title||p.title,
+   status:p.status||'Planned',
+   decision_metadata:p.explanation||{}
+  }));
+ }
+ if(!b.data?.length && initialPlanPayload?.recipes?.length){
+  b.data=initialPlanPayload.recipes.map(r=>({
+   household_id:remoteHouseholdId,
+   recipe_key:r.recipe_key||r.id,
+   name:r.name,
+   marathi_name:r.marathi_name||r.name,
+   course:r.course,
+   time_text:r.time_text,
+   ingredients:r.ingredients||[],
+   method:r.method||[],
+   protein:r.protein,
+   fibre:r.fibre,
+   calories:r.calories,
+   oil:r.oil,
+   note:r.note,
+   description:r.description,
+   marathi_description:r.marathi_description,
+   meal_category:r.meal_category||r.course,
+   meal_role:r.meal_role,
+   servings:r.servings||4,
+   cooking_method:r.cooking_method,
+   dietary_flags:r.dietary_flags||{},
+   nutrition_metadata:r.nutrition_metadata||{}
+  }));
+ }
+ if(!c.data?.length && initialPlanPayload?.members?.length){
+  c.data=initialPlanPayload.members.map(m=>({
+   household_id:remoteHouseholdId,
+   member_key:m.member_key||m.id,
+   name:m.name,
+   marathi_name:m.marathi_name||m.name,
+   age:m.age,
+   sex:m.sex,
+   weight_kg:m.weight_kg,
+   height_cm:m.height_cm,
+   activity:m.activity,
+   note:m.note,
+   sort_order:m.sort_order||0
+  }));
  }
  cloudApplyingRemote=true;
  try{
@@ -168,7 +221,27 @@ async function loadRemote(){
   const memberMap=new Map((c.data||[]).map(m=>[m.id,m.member_key]));
   const recipeMap=new Map((b.data||[]).map(r=>[r.id,r.recipe_key]));
   const remoteAssignments=mapMealAssignments(k.data,{mealMap,memberMap,recipeMap});
-  if(remoteAssignments.length){state.mealAssignments=remoteAssignments;}
+  if(remoteAssignments.length){
+   state.mealAssignments=remoteAssignments;
+  }else if(initialPlanPayload?.plan?.length && !state.mealAssignments?.length){
+   const extracted=[];
+   for(const p of initialPlanPayload.plan){
+    const mId=`${p.date}-${p.slot}`;
+    for(const asgn of (p.assignments||[])){
+     extracted.push({
+      mealEntryId:mId,
+      memberId:asgn.member_id,
+      recipeId:asgn.recipe_id||asgn.automatic_recipe_id||p.recipe_id,
+      portionFactor:asgn.portion_factor||1,
+      assignmentSource:asgn.assignment_source||'automatic',
+      automaticRecipeId:asgn.automatic_recipe_id||p.recipe_id,
+      overrideRecipeId:asgn.override_recipe_id||null,
+      overrideReason:asgn.override_reason||null
+     });
+    }
+   }
+   if(extracted.length)state.mealAssignments=extracted;
+  }
   state.dietaryRules=mapDietaryRules(rules.data);
   if(uiRes.data && uiRes.data.length){
    state.uiContent=mapUiContent(uiRes.data);

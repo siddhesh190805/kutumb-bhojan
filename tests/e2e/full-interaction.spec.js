@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Kutumb Bhojan Full Interaction E2E', () => {
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', err => console.log('PAGEERROR', err.message));
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
   });
 

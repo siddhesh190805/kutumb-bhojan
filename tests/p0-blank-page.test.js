@@ -67,3 +67,12 @@ test('P0 REGRESSION: evaluateRecipeEligibility is imported and assignmentOptions
   assert.match(fnMatch[1], /evaluateRecipeEligibility\s*\(/, 'assignmentOptions must call evaluateRecipeEligibility');
 });
 
+test('P0 REGRESSION: loadRemote prevents infinite planning recursion and populates state when remote is empty', () => {
+  const normalizedApp = appSource.replace(/\r\n/g, '\n');
+  assert.match(normalizedApp, /async\s+function\s+loadRemote\s*\(\s*isRetry\s*=\s*false\s*\)/, 'loadRemote must have recursion guard parameter');
+  assert.match(normalizedApp, /initialPlanPayload/, 'loadRemote must capture plan payload');
+  assert.match(normalizedApp, /initialPlanPayload\?\.plan/, 'loadRemote must populate meals from plan payload when remote is empty');
+  assert.match(normalizedApp, /initialPlanPayload\?\.recipes/, 'loadRemote must populate recipes from plan payload when remote is empty');
+  assert.match(normalizedApp, /initialPlanPayload\?\.members/, 'loadRemote must populate members from plan payload when remote is empty');
+});
+

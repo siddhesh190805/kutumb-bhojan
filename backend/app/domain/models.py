@@ -277,6 +277,8 @@ class PlanningRequest(BaseModel):
 class PlanningResponse(BaseModel):
     success: bool
     plan: list[MealPlanSlot]
+    recipes: list[Recipe] = Field(default_factory=list)
+    members: list[FamilyMember] = Field(default_factory=list)
     prep_tasks: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     evaluation_summary: EvaluationSummary

@@ -171,6 +171,8 @@ async def create_plan(
             except Exception as persist_err:
                 result.warnings.append(f"Persistence notice: {str(persist_err)}")
 
+            result.recipes = recipes
+            result.members = members
             return result
 
         except HTTPException:

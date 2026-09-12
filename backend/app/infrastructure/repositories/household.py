@@ -19,6 +19,33 @@ class HouseholdRepository:
         except Exception:
             rows = []
         if not rows:
+            members_payload = [
+                {
+                    "household_id": household_id,
+                    "member_key": m.member_key or m.id,
+                    "name": m.name,
+                    "marathi_name": m.marathi_name or m.name,
+                    "age": m.age,
+                    "sex": m.sex,
+                    "weight_kg": float(m.weight_kg) if m.weight_kg is not None else None,
+                    "height_cm": float(m.height_cm) if m.height_cm is not None else None,
+                    "activity": m.activity,
+                    "note": m.note,
+                    "sort_order": m.sort_order,
+                }
+                for m in CANONICAL_FAMILY_MEMBERS
+            ]
+            try:
+                await self.client.apost(
+                    "family_members",
+                    members_payload,
+                    auth_token=auth_token,
+                    upsert=True,
+                    on_conflict="household_id,member_key",
+                    http_client=http_client,
+                )
+            except Exception:
+                pass
             return [m.model_copy() for m in CANONICAL_FAMILY_MEMBERS]
         return [
             FamilyMember(
