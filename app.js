@@ -478,10 +478,11 @@ function mealAssignmentsView(meal){
         ${assignments.some(a=>!a.recipeId&&a.overrideReason&&a.overrideReason.includes('frequency'))?`<div class="alternate-warning">⚠️ ${t('meal_member.no_suitable_alt')}</div>`:''}
       </div>`;
 
- return `<div class="meal-assignments">
-   ${familySummary}
-   <details class="member-editor-details">
-     <summary class="member-editor-summary">
+  const wasOpen = typeof document !== 'undefined' && document.getElementById(`details-${meal.id}`)?.open;
+  return `<div class="meal-assignments">
+    ${familySummary}
+    <details class="member-editor-details" id="details-${esc(meal.id)}" ${wasOpen ? 'open' : ''}>
+      <summary class="member-editor-summary">
        <span>⚙️ ${t('meal_member.change_for_day', 'Change for this day')}</span>
      </summary>
      <div class="member-editor-rows">

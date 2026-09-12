@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 async function main() {
   console.log("=== STARTING REAL CHROMIUM VERIFICATION ON CANONICAL PRODUCTION ===");
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
 
   const pageErrors = [];
@@ -30,8 +30,8 @@ async function main() {
   console.log(`Navigating to ${targetUrl}...`);
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  console.log("Waiting 6s for cloud init and remote sync...");
-  await page.waitForTimeout(6000);
+  console.log("Waiting for meal cards to render...");
+  await page.locator('.meal-card').first().waitFor({ state: 'visible', timeout: 30000 });
 
   // 1. Verify #app is populated
   const appHtml = await page.locator('#app').innerHTML();
@@ -48,13 +48,13 @@ async function main() {
   for (let i = 0; i < mealCount; i++) {
     const card = mealCards.nth(i);
     const slot = (await card.locator('.meal-slot small').textContent() || '').trim();
-    const title = (await card.locator('.meal-title').textContent() || '').trim();
+    const title = (await card.locator('p').first().textContent() || '').trim();
     console.log(`  Meal ${i + 1} [${slot}]: ${title}`);
   }
 
   // 3. Recipes tab check
   console.log("Navigating to Recipes tab...");
-  await page.click('[data-page="recipes"]');
+  await page.click('aside.sidebar [data-page="recipes"]');
   await page.waitForTimeout(1500);
   const recipeCards = page.locator('.recipe-card');
   const recipeCount = await recipeCards.count();
@@ -62,25 +62,26 @@ async function main() {
 
   // 4. Family tab check
   console.log("Navigating to Family tab...");
-  await page.click('[data-page="family"]');
+  await page.click('aside.sidebar [data-page="family"]');
   await page.waitForTimeout(1500);
-  const memberCards = page.locator('.member-card');
+  const memberCards = page.locator('.person-card');
   const memberCount = await memberCards.count();
   console.log(`Family members rendered: ${memberCount}`);
 
   // 5. Return to Today
   console.log("Returning to Today tab...");
-  await page.click('[data-page="today"]');
+  await page.click('aside.sidebar [data-page="today"]');
   await page.waitForTimeout(1500);
 
   // 6. Test meal-assignment persistence via real user interaction (no evaluate)
   console.log("Testing meal assignment interaction and persistence...");
-  const firstSummary = page.locator('summary.member-editor-summary').first();
-  await firstSummary.click();
-  await page.waitForTimeout(800);
+  const summaryEl = page.locator('summary.member-editor-summary').first();
+  await summaryEl.scrollIntoViewIfNeeded();
+  await summaryEl.click();
+  await page.waitForTimeout(1000);
 
   const selectEl = page.locator('select[data-change-assignment]').first();
-  await selectEl.waitFor({ state: 'visible' });
+  await selectEl.waitFor({ state: 'visible', timeout: 10000 });
 
   // Get options
   const optionValues = await selectEl.locator('option').evaluateAll(opts => opts.map(o => o.value));
@@ -99,13 +100,15 @@ async function main() {
     // Reload page to verify persistence across fresh load
     console.log("Reloading page to test persistence across page refresh...");
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(4000);
+    await page.locator('.meal-card').first().waitFor({ state: 'visible', timeout: 30000 });
 
     const reloadedSummary = page.locator('summary.member-editor-summary').first();
+    await reloadedSummary.scrollIntoViewIfNeeded();
     await reloadedSummary.click();
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1000);
 
     const reloadedSelect = page.locator('select[data-change-assignment]').first();
+    await reloadedSelect.waitFor({ state: 'visible', timeout: 10000 });
     const persistedVal = await reloadedSelect.inputValue();
     console.log(`Persisted assignment after reload: ${persistedVal}`);
 
