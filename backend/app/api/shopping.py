@@ -12,6 +12,15 @@ recipe_repo = RecipeRepository(supabase_client)
 ingredient_repo = IngredientRepository(supabase_client)
 
 
+def require_bearer_token(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    token = authorization.split("Bearer ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return token
+
+
 @router.get("/derived")
 @router.get("/api/shopping/derived")
 def get_derived_shopping(
@@ -20,9 +29,7 @@ def get_derived_shopping(
     household_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    auth_token = None
-    if authorization and authorization.startswith("Bearer "):
-        auth_token = authorization.split("Bearer ", 1)[1].strip()
+    auth_token = require_bearer_token(authorization)
 
     if not household_id:
         try:
@@ -50,4 +57,3 @@ def get_derived_shopping(
         "items": items,
         "dateRange": {"startDate": start_date, "endDate": end_date},
     }
-
