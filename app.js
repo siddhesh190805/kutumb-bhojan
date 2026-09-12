@@ -363,6 +363,7 @@ async function initCloud(){
       const pData=await planRes.json();
       if(pData?.plan?.length){
        state=mapRemoteState({members:pData.members||[],meals:pData.plan.map(p=>({meal_date:p.date,slot:p.slot,title:p.title,marathi_title:p.marathi_title||p.title,status:p.status||'Planned',decision_metadata:p.explanation||{}})),recipes:pData.recipes||[],shopping:[],prep:[]},state);
+       ensureAutomaticAssignments();
        localStorage.setItem(STORAGE,JSON.stringify(state));
       }
      }

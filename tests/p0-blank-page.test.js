@@ -76,3 +76,16 @@ test('P0 REGRESSION: loadRemote prevents infinite planning recursion and populat
   assert.match(normalizedApp, /initialPlanPayload\?\.members/, 'loadRemote must populate members from plan payload when remote is empty');
 });
 
+test('P0 REGRESSION: initCloud has fallback plan generation preventing empty state on cloud failure', () => {
+  const normalizedApp = appSource.replace(/\r\n/g, '\n');
+  assert.match(normalizedApp, /catch\s*\(\s*err\s*\)\s*\{[\s\S]*?fetch\s*\(\s*['"]\/api\/planning\/plans['"]/, 'catch block must call /api/planning/plans fallback');
+  assert.match(normalizedApp, /ensureAutomaticAssignments\(\)/, 'fallback path must ensure assignments');
+});
+
+test('P0 REGRESSION: member-editor-details preserves open state across re-renders', () => {
+  const normalizedApp = appSource.replace(/\r\n/g, '\n');
+  assert.match(normalizedApp, /details-\$\{meal\.id\}/, 'details element must have stable id');
+  assert.match(normalizedApp, /\$\{wasOpen\s*\?\s*['"]open['"]\s*:\s*['"]['"]\}/, 'details element must preserve open attribute');
+});
+
+
