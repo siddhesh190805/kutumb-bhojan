@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 from backend.app.main import app
 
 
@@ -71,12 +72,18 @@ def test_api_tts_speak(client):
     res_bad = client.post("/api/tts/speak", json={"text": ""})
     assert res_bad.status_code == 422
 
-    res = client.post(
-        "/api/tts/speak",
-        json={"text": "आज रात्री मूग डाळ खिचडी आणि दही", "language": "mr-IN"},
-        headers=AUTH_HEADERS,
-    )
+    with patch("backend.app.api.tts.supabase_client.aget_user_from_token", return_value={"id": "test-user"}):
+        res = client.post(
+            "/api/tts/speak",
+            json={"text": "आज रात्री मूग डाळ खिचडी आणि दही", "language": "mr-IN"},
+            headers=AUTH_HEADERS,
+        )
     assert res.status_code == 200
     data = res.json()
     assert data["fallback"] is True
     assert data["language"] == "mr-IN"
+
+
+def test_api_tts_requires_authentication(client):
+    res = client.post("/api/tts/speak", json={"text": "test"})
+    assert res.status_code == 401
