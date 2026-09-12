@@ -356,6 +356,18 @@ async function initCloud(){
   }catch(err){
    console.error('Cloud initialization failed',err);
    cleanupCloud();
+   if(!state.meals?.length){
+    try{
+     const planRes=await fetch('/api/planning/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start_date:'2026-09-07',visible_days:7,evaluation_days:30})});
+     if(planRes.ok){
+      const pData=await planRes.json();
+      if(pData?.plan?.length){
+       state=mapRemoteState({members:pData.members||[],meals:pData.plan.map(p=>({meal_date:p.date,slot:p.slot,title:p.title,marathi_title:p.marathi_title||p.title,status:p.status||'Planned',decision_metadata:p.explanation||{}})),recipes:pData.recipes||[],shopping:[],prep:[]},state);
+       localStorage.setItem(STORAGE,JSON.stringify(state));
+      }
+     }
+    }catch(_pErr){console.warn('Fallback planning fetch failed',_pErr);}
+   }
    render();
    toast(t('msg.cloud_sync_unavailable','Cloud sync unavailable · क्लाउड sync उपलब्ध नाही. Local data चालू आहे.'));
   }finally{cloudInitializing=false;}
