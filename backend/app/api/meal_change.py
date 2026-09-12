@@ -28,6 +28,15 @@ class MealChangePayload(BaseModel):
     custom_constraint: str | None = Field(default=None, alias="customConstraint")
 
 
+def require_bearer_token(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    token = authorization.split("Bearer ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return token
+
+
 @router.post("/meal-change", response_model=MealChangeResponse)
 @router.post("/api/planning/meal-change", response_model=MealChangeResponse)
 def change_meal(
@@ -37,9 +46,7 @@ def change_meal(
     if not payload.current_meal:
         raise HTTPException(status_code=400, detail="currentMeal is required")
 
-    auth_token = None
-    if authorization and authorization.startswith("Bearer "):
-        auth_token = authorization.split("Bearer ", 1)[1].strip()
+    auth_token = require_bearer_token(authorization)
 
     household_id = payload.household_id
     if not household_id:
@@ -56,7 +63,6 @@ def change_meal(
         members = household_repo.get_family_members(household_id, auth_token=auth_token)
         dietary_rules = household_repo.get_dietary_rules(household_id, auth_token=auth_token)
 
-        # Parse current_meal context
         cm = payload.current_meal
         target_date = cm.get("date") or cm.get("meal_date") or ""
         slot = cm.get("slot") or "Dinner"
